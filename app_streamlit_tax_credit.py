@@ -1,24 +1,18 @@
 # -*- coding: utf-8 -*-
 
-# === Force scroll to top on load & reruns ===
+# === Force scroll to top on initial load only ===
 import streamlit.components.v1 as _components
-def _inject_force_top(_interval_ms: int = 120, _repeat: int = 15, _enable_mo: bool = True) -> None:
-    _mo_js = "new MutationObserver(() => { forceTop(); }).observe(document.body, {childList: true, subtree: true});" if _enable_mo else ""
-    _html = f"""
+def _inject_force_top_once() -> None:
+    _html = """
     <script>
-    (function() {{
-      function forceTop() {{
-        try {{ window.scrollTo({{top: 0, behavior: 'auto'}}); }} catch(e) {{}}
-      }}
-      forceTop();
-      let ticks = 0;
-      const iv = setInterval(() => {{
-        forceTop();
-        if (++ticks > {{_repeat}}) clearInterval(iv);
-      }}, {{_interval_ms}});
-      document.addEventListener('visibilitychange', () => {{ if (!document.hidden) forceTop(); }});
-      {_mo_js}
-    }})();
+    (function() {
+      function forceTop() {
+        try { window.scrollTo({top: 0, behavior: 'auto'}); } catch(e) {}
+      }
+      // Run on DOM ready and on window load (covers most cases)
+      document.addEventListener('DOMContentLoaded', forceTop, {once:true});
+      window.addEventListener('load', forceTop, {once:true});
+    })();
     </script>
     """
     _components.html(_html, height=0)
@@ -45,28 +39,8 @@ from employment_tax_credit_calc import (
 
 st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
 # Force scroll to top on load
-_inject_force_top()
+_inject_force_top_once()
 
-
-# =====================
-# 상단 스크롤 고정 (강제)
-# =====================
-import streamlit.components.v1 as components
-components.html(
-    """
-    <script>
-    (function() {
-      function forceTop() { try { window.scrollTo({top: 0, behavior: 'auto'}); } catch(e) {} }
-      forceTop();
-      let ticks = 0;
-      const iv = setInterval(() => { forceTop(); if (++ticks > 12) clearInterval(iv); }, 100);
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) forceTop(); });
-      new MutationObserver(() => { forceTop(); }).observe(document.body, {childList: true, subtree: true});
-    })();
-    </script>
-    """,
-    height=0,
-)
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
 st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
@@ -551,77 +525,80 @@ def _build_chat_context() -> str:
 load_dotenv()
 
 st.divider()
-st.header("💬 OpenAI 챗봇")
-st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요. (모델: gpt-4o-mini)")
-
-if "openai_api_key" not in st.session_state:
-    st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-
-with st.expander("🔑 OpenAI API 키 설정", expanded=not bool(st.session_state.openai_api_key)):
-    st.info("아래에 OpenAI API 키를 입력하세요. (한 번 입력하면 세션이 유지됩니다.)")
-    key_input = st.text_input("API 키 입력 (sk-로 시작)", type="password", value=st.session_state.openai_api_key)
-    if st.button("✅ 적용하기", use_container_width=True):
-        st.session_state.openai_api_key = key_input.strip()
-        if not st.session_state.openai_api_key.startswith("sk-"):
-            st.warning("유효한 OpenAI API 키 형식이 아닙니다.")
-        else:
-            os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
-            st.success("API 키가 설정되었습니다. 이제 챗봇을 사용할 수 있습니다.")
-
-if not st.session_state.openai_api_key:
-    st.warning("⛔ OpenAI API 키가 설정되어 있지 않습니다. 위 입력창에 키를 입력하세요.")
-    st.stop()
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "system_prompt" not in st.session_state:
-    st.session_state.system_prompt = "You are a helpful assistant for Korean tax credit calculator users. Reply in Korean by default."
-
-with st.expander("⚙️ 챗봇 설정", expanded=False):
-    model = st.selectbox("모델 선택", ["gpt-4o-mini", "gpt-4o"], index=0)
-    temperature = st.slider("온도(창의성)", 0.0, 1.0, 0.2, 0.1)
-    sys_prompt = st.text_area("시스템 프롬프트", st.session_state.system_prompt, height=80)
-    include_ctx = st.checkbox("질문에 계산 맥락 포함하기", value=True)
-    apply_pref = st.checkbox("설정 반영하기", value=True)
-    if apply_pref:
-        st.session_state.system_prompt = sys_prompt
-
-for m in st.session_state.chat_history:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-with st.expander("🐞 디버그(이벤트 타입 확인)", expanded=False):
-    if st.button("이벤트 타입 미리보기"):
-        preview = []
-        if st.session_state.get("system_prompt"):
-            preview.append({"role":"system","type":"input_text"})
-        for m in st.session_state.get("chat_history", []):
-            role = m.get("role","user")
-            typ = "output_text" if role == "assistant" else "input_text"
-            preview.append({"role": role, "type": typ})
-        st.write(preview if preview else "이력 없음")
-
-user_text = st.chat_input("메시지를 입력하세요…")
-if user_text:
-    st.session_state.chat_history.append({"role": "user", "content": user_text})
-    with st.chat_message("user"):
-        st.markdown(user_text)
-
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        acc = ""
-        try:
-            ctx = _build_chat_context() if include_ctx else ""
-            sys_msg = st.session_state.system_prompt + ("\n\n" + ctx if ctx else "")
-            for token in stream_chat(
-                st.session_state.chat_history,
-                system_prompt=sys_msg,
-                model=model,
-            ):
-                acc += token
+show_chat = st.toggle("💬 하단 챗봇 패널 열기", value=False)
+if show_chat:
+    st.header("💬 OpenAI 챗봇")
+    
+    st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요. (모델: gpt-4o-mini)")
+    
+    if "openai_api_key" not in st.session_state:
+        st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    
+    with st.expander("🔑 OpenAI API 키 설정", expanded=not bool(st.session_state.openai_api_key)):
+        st.info("아래에 OpenAI API 키를 입력하세요. (한 번 입력하면 세션이 유지됩니다.)")
+        key_input = st.text_input("API 키 입력 (sk-로 시작)", type="password", value=st.session_state.openai_api_key)
+        if st.button("✅ 적용하기", use_container_width=True):
+            st.session_state.openai_api_key = key_input.strip()
+            if not st.session_state.openai_api_key.startswith("sk-"):
+                st.warning("유효한 OpenAI API 키 형식이 아닙니다.")
+            else:
+                os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
+                st.success("API 키가 설정되었습니다. 이제 챗봇을 사용할 수 있습니다.")
+    
+    if not st.session_state.openai_api_key:
+        st.warning("⛔ OpenAI API 키가 설정되어 있지 않습니다. 위 입력창에 키를 입력하세요.")
+        st.stop()
+    
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    if "system_prompt" not in st.session_state:
+        st.session_state.system_prompt = "You are a helpful assistant for Korean tax credit calculator users. Reply in Korean by default."
+    
+    with st.expander("⚙️ 챗봇 설정", expanded=False):
+        model = st.selectbox("모델 선택", ["gpt-4o-mini", "gpt-4o"], index=0)
+        temperature = st.slider("온도(창의성)", 0.0, 1.0, 0.2, 0.1)
+        sys_prompt = st.text_area("시스템 프롬프트", st.session_state.system_prompt, height=80)
+        include_ctx = st.checkbox("질문에 계산 맥락 포함하기", value=True)
+        apply_pref = st.checkbox("설정 반영하기", value=True)
+        if apply_pref:
+            st.session_state.system_prompt = sys_prompt
+    
+    for m in st.session_state.chat_history:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+    
+    with st.expander("🐞 디버그(이벤트 타입 확인)", expanded=False):
+        if st.button("이벤트 타입 미리보기"):
+            preview = []
+            if st.session_state.get("system_prompt"):
+                preview.append({"role":"system","type":"input_text"})
+            for m in st.session_state.get("chat_history", []):
+                role = m.get("role","user")
+                typ = "output_text" if role == "assistant" else "input_text"
+                preview.append({"role": role, "type": typ})
+            st.write(preview if preview else "이력 없음")
+    
+    user_text = st.chat_input("메시지를 입력하세요…")
+    if user_text:
+        st.session_state.chat_history.append({"role": "user", "content": user_text})
+        with st.chat_message("user"):
+            st.markdown(user_text)
+    
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            acc = ""
+            try:
+                ctx = _build_chat_context() if include_ctx else ""
+                sys_msg = st.session_state.system_prompt + ("\n\n" + ctx if ctx else "")
+                for token in stream_chat(
+                    st.session_state.chat_history,
+                    system_prompt=sys_msg,
+                    model=model,
+                ):
+                    acc += token
+                    placeholder.markdown(acc)
+            except Exception as e:
+                acc = f"⚠️ 오류가 발생했어요: {e}"
                 placeholder.markdown(acc)
-        except Exception as e:
-            acc = f"⚠️ 오류가 발생했어요: {e}"
-            placeholder.markdown(acc)
-
-    st.session_state.chat_history.append({"role": "assistant", "content": acc})
+    
+        st.session_state.chat_history.append({"role": "assistant", "content": acc})
