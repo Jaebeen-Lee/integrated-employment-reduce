@@ -245,7 +245,7 @@ if summary is not None:
     st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
     st.caption("표를 입력한 뒤 아래 **[추징세액 계산하기]** 버튼을 누르면 표가 자동 반영되어 계산됩니다.")
 
-    with st.form("followup_form", clear_on_submit=False):
+    with st.container():
         buf_df = st.session_state.followup_table.copy() if st.session_state.followup_table is not None else pd.DataFrame()
         colcfg = {
             "연차": st.column_config.NumberColumn("연차", step=1, disabled=True),
@@ -266,7 +266,9 @@ if summary is not None:
         with c2:
             pass
 
-    trigger_calc = Falseif st.button("🔁 추징세액 계산하기", type="primary"):
+    trigger_calc = False
+    if st.button("🔁 추징세액 계산하기", type="primary"):
+        st.session_state.followup_table = edited.copy()
         st.session_state.followup_table = edited.copy()
         trigger_calc = True
 
@@ -325,116 +327,19 @@ st.session_state.calc_context = {
 # ============================
 
 def _build_excel():
+    """엑셀 내보내기: 사후관리 결과표 한 시트만 포함."""
     buffer = io.BytesIO()
     wb = Workbook()
-    ws = wb.active; ws.title = "요약"
-
-    # 스타일
-    title_font = Font(name="맑은 고딕", size=14, bold=True)
-    header_fill = PatternFill("solid", fgColor="F2F2F2")
-    thin = Side(style="thin", color="CCCCCC")
-    border_all = Border(top=thin, bottom=thin, left=thin, right=thin)
-    center = Alignment(horizontal="center", vertical="center")
-    right = Alignment(horizontal="right", vertical="center")
-
-    # NamedStyle 등록
-    currency_style = NamedStyle(name="KRW")
-    currency_style.number_format = '#,##0"원"'
-    currency_style.alignment = right
-    try:
-        wb.add_named_style(currency_style)
-    except Exception:
-        pass
-
-    # 로고 (메모리)
-    row_cursor = 1
-    if st.session_state.saved_logo_png is not None:
-        try:
-            pil_img = PILImage.open(io.BytesIO(st.session_state.saved_logo_png))
-            img = XLImage(pil_img)
-            img.width = 140; img.height = 40
-            ws.add_image(img, "A1"); row_cursor = 4
-        except Exception as e:
-            st.warning(f"로고 삽입 중 오류: {e}")
-
-    title_cell = ws.cell(row=row_cursor, column=1, value="통합고용세액공제 계산 결과")
-    title_cell.font = title_font
-    ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=6)
-    ws.cell(row=row_cursor, column=7, value=f"작성일자: {datetime.now().strftime('%Y-%m-%d')}").alignment = right
-    ws.cell(row=row_cursor+1, column=1, value=f"기관명: {st.session_state.saved_company_name or '(기관명)'}")
-
-    summary = st.session_state.get("calc_summary")
-    if summary:
-        ws.cell(row=row_cursor+1, column=4, value=f"기업규모/지역: {summary['company_size']}/{summary['region']}")
-
-    start = row_cursor + 3
-    data = [["항목", "값"]]
-    if summary:
-        data.extend([
-            ["총공제액 (최저한세/한도 전)", int(summary["gross"])],
-            ["적용 공제액 (최저한세/한도 후)", int(summary["applied"])],
-            ["유지기간(년)", int(summary["retention_years"])],
-            ["추징방식", summary["clawback_method"]],
-        ])
+    ws = wb.active
+    ws.title = "사후관리 결과표"
+    headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
+    ws.append(headers)
     last_calc = st.session_state.get("last_calc")
-    if last_calc is not None:
-        data.append(["추징세액 합계", int(last_calc.get("total_clawback", 0))])
-
-    # 요약 채우기
-    for r_idx, row in enumerate(data, start=start):
-        for c_idx, val in enumerate(row, start=1):
-            ws.cell(row=r_idx, column=c_idx, value=val)
-
-    if summary:
-        ws.cell(row=start+1, column=2).style = "KRW"
-        ws.cell(row=start+2, column=2).style = "KRW"
-    if last_calc is not None:
-        ws.cell(row=start+4, column=2).style = "KRW"
-
-    for r in ws.iter_rows(min_row=start, max_row=start+len(data)-1, min_col=1, max_col=2):
-        for cell in r:
-            cell.border = border_all
-            if cell.row == start:
-                cell.fill = header_fill; cell.alignment = center
-            elif cell.column == 1:
-                cell.alignment = center
-            else:
-                if cell.style != "KRW":
-                    cell.alignment = right
-
-    # ▶ 사후관리 입력표 시트 제거 (요청사항)
-    # 입력표 시트 생성을 생략합니다.
-# ▶ 사후관리 결과표 시트(계산한 경우만)
-    if last_calc is not None:
-        ws_res = wb.create_sheet("사후관리 결과표")
-        headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
-        ws_res.append(headers)
+    if last_calc and last_calc.get("schedule_records"):
         for row in last_calc["schedule_records"]:
-            ws_res.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
-
-        for cell in ws_res[1]:
-            cell.fill = header_fill; cell.border = border_all; cell.alignment = center; cell.font = Font(bold=True)
-        for r in range(2, 2 + len(last_calc["schedule_records"])):
-            ws_res.cell(row=r, column=1).alignment = center
-            ws_res.cell(row=r, column=2).alignment = right
-            ws_res.cell(row=r, column=3).alignment = right
-            ws_res.cell(row=r, column=4).style = "KRW"
-            for c in range(1, 5):
-                ws_res.cell(row=r, column=c).border = border_all
-        for col, w in zip(["A","B","C","D"], [10, 18, 18, 18]):
-            ws_res.column_dimensions[col].width = w
-
-    # 컬럼 폭/헤더
-    ws.column_dimensions["A"].width = 22; ws.column_dimensions["B"].width = 26
-    try:
-        ws.header_footer.left_header = f"&L{st.session_state.saved_company_name or '(기관명)'}"
-        ws.header_footer.right_header = "&R통합고용세액공제 계산 결과"
-    except Exception:
-        pass
-
+            ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
     wb.save(buffer)
     return buffer.getvalue()
-
 # 다운로드 버튼 (요약만 있어도 활성화)
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
