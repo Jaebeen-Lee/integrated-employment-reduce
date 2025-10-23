@@ -480,22 +480,46 @@ def _build_excel():
         for row in last_calc["schedule_records"]:
             ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
 
-    # === [변경] 첫 3칸(각 열) 연한 노랑색 강조 ===
+    # === [변경 v2] 숫자 있는 첫 3칸 연한 노랑 ===
     try:
-        yellow_fill = PatternFill(start_color="FFFCE8A1", end_color="FFFCE8A1", fill_type="solid")
-        # 헤더(1행)에서 대상 열의 인덱스 찾기
-        header_map = {cell.value: cell.column for cell in ws[1]}
+        # openpyxl은 RGB 6자리 코드 권장
+        yellow_fill = PatternFill(start_color="FCE8A1", end_color="FCE8A1", fill_type="solid")
+
+        # 헤더(1행)에서 대상 열 인덱스 계산 (정수 인덱스 보장)
+        header_map = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
         col_total = header_map.get("사후연도 상시")
         col_youth = header_map.get("사후연도 청년등")
-        # 데이터 시작은 2행, 최대 3행까지(즉, 2~4행)
-        top_rows_end = min(4, ws.max_row)
-        for r in range(2, top_rows_end + 1):
-            if col_total:
-                ws.cell(row=r, column=col_total).fill = yellow_fill
-            if col_youth:
-                ws.cell(row=r, column=col_youth).fill = yellow_fill
+
+        def has_number(v):
+            if v is None:
+                return False
+            # 숫자 or 숫자 문자열 허용
+            try:
+                float(str(v).replace(',', '').strip())
+                return True
+            except Exception:
+                return False
+
+        # 숫자가 들어있는 셀 3개씩만 채움
+        filled_total = 0
+        filled_youth = 0
+        for r in range(2, ws.max_row + 1):
+            if col_total and filled_total < 3:
+                c = ws.cell(row=r, column=col_total)
+                if has_number(c.value):
+                    c.fill = yellow_fill
+                    filled_total += 1
+
+            if col_youth and filled_youth < 3:
+                c = ws.cell(row=r, column=col_youth)
+                if has_number(c.value):
+                    c.fill = yellow_fill
+                    filled_youth += 1
+
+            if filled_total >= 3 and filled_youth >= 3:
+                break
     except Exception as _style_err:
-        # 스타일 적용 실패 시에도 동작은 계속되도록 무시
+        # 색상 적용 실패 시에도 저장은 진행
         pass
 
     try:
