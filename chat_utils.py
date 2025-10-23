@@ -1,37 +1,39 @@
 # -*- coding: utf-8 -*-
-"""OpenAI Responses API helper for Streamlit chat (streaming)."""
+\"\"\"OpenAI Responses API helper for Streamlit chat (streaming).\"\"\"
 import os
 from typing import Iterable, List, Dict, Optional
 from openai import OpenAI
 
 def _client() -> OpenAI:
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    key = os.getenv("OPENAI_API_KEY")
+    return OpenAI(api_key=key)
+
+def _ctype_for_role(role: str) -> str:
+    r = (role or "user").lower()
+    # Only assistant outputs are 'output_text'; all inputs use 'input_text'
+    return "output_text" if r in ("assistant", "model") else "input_text"
 
 def stream_chat(messages: List[Dict[str, str]], system_prompt: Optional[str] = None, model: str = "gpt-4o-mini") -> Iterable[str]:
-    """Yield assistant text tokens using Responses API streaming.
-    `messages` is a list like: [{"role": "user"|"assistant", "content": "..."}, ...]
-    """
+    \"\"\"Yield assistant text tokens using Responses API streaming.
+    `messages` is a list like: [{\"role\": \"user\"|\"assistant\", \"content\": \"...\"}, ...]
+    \"\"\"
     client = _client()
 
     events = []
-    # system -> input_text
+    # system prompt as input_text
     if system_prompt:
         events.append({
             "role": "system",
             "content": [{"type": "input_text", "text": system_prompt}],
         })
-    # history
     for m in messages:
         role = m.get("role", "user")
         text = m.get("content", "")
-        # IMPORTANT: assistant messages must be 'output_text'
-        ctype = "output_text" if role == "assistant" else "input_text"
         events.append({
             "role": role,
-            "content": [{"type": ctype, "text": text}],
+            "content": [{"type": _ctype_for_role(role), "text": text}],
         })
 
-    # Stream
     with client.responses.stream(model=model, input=events) as stream:
         for event in stream:
             if event.type == "response.output_text.delta":

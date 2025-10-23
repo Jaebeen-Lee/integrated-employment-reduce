@@ -17,10 +17,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
 
-st.title("통합고용세액공제 계산기")
-st.caption("조특법 §29조의8에 따른 통합고용세액공제를 계산합니다.")
+st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
+st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완.")
 
 # 세션 상태
 if "saved_logo_png" not in st.session_state:
@@ -29,9 +29,9 @@ if "saved_company_name" not in st.session_state:
     st.session_state.saved_company_name = None
 
 with st.sidebar:
-    st.header("1) 최근 시행령 적용")
-    uploaded = st.file_uploader("최근 시행령을 반영한 JSON 업로드", type=["json"], accept_multiple_files=False)
-    default_info = st.toggle("예시 파라미터 사용", value=True)
+    st.header("1) 정책 파라미터")
+    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
+    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
@@ -294,6 +294,8 @@ else:
 # ==============================
 import os
 from dotenv import load_dotenv
+import importlib, chat_utils
+importlib.reload(chat_utils)
 from chat_utils import stream_chat
 
 # .env 로드
@@ -342,6 +344,18 @@ with st.expander("⚙️ 챗봇 설정", expanded=False):
 for m in st.session_state.chat_history:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
+
+with st.expander("🐞 디버그(이벤트 타입 확인)", expanded=False):
+    if st.button("이벤트 타입 미리보기"):
+        # 미리보기용으로 events를 구성해 보여줍니다.
+        preview = []
+        if st.session_state.get("system_prompt"):
+            preview.append({"role":"system","type":"input_text"})
+        for m in st.session_state.get("chat_history", []):
+            role = m.get("role","user")
+            typ = "output_text" if role == "assistant" else "input_text"
+            preview.append({"role": role, "type": typ})
+        st.write(preview if preview else "이력 없음")
 
 # 입력창
 user_text = st.chat_input("메시지를 입력하세요…")
