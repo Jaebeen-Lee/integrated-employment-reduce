@@ -587,8 +587,8 @@ if show_chat:
         c1, c2, c3 = st.columns(3)
         if c1.button("❓ 1,000만원을 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"):
             st.session_state["pending_user_text"] = "1,000만원을 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"
-        if c2.button("❓ 사후관리 결과 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"):
-            st.session_state["pending_user_text"] = "사후관리 결과 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"
+        if c2.button("❓ 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"):
+            st.session_state["pending_user_text"] = "공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"
         if c3.button("❓ 적용공제세액이 계산된 근거를 알려주세요"):
             st.session_state["pending_user_text"] = "적용공제세액이 계산된 근거를 알려주세요"
 
