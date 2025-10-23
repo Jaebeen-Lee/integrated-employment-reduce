@@ -372,7 +372,7 @@ if not trigger_calc:
     if _prev is not None and _prev.get("schedule_records"):
         import pandas as pd
         schedule_df = pd.DataFrame(_prev["schedule_records"])
-        st.subheader("사후관리(추징) 결과 (최근 계산)")
+        st.subheader("사후관리(추징) 결과")
         st.dataframe(schedule_df, use_container_width=True)
         st.metric("추징세액 합계", f"{int(_prev.get('total_clawback',0)):,} 원")
 
