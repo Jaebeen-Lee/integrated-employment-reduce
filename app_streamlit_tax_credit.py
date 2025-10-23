@@ -36,7 +36,6 @@ _ensure("saved_company_name", None)
 _ensure("followup_table", None)              # 사후관리 표 유지용
 _ensure("calc_summary", None)                # 계산하기 직후 공제요약 유지
 _ensure("last_calc", None)
-_ensure("trigger_calc", False)
 
 # ==== 사후관리 표 유틸을 상단으로 이동 (NameError 방지) ====
 def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
@@ -267,15 +266,14 @@ if summary is not None:
         with c2:
             pass
 
-    st.session_state.trigger_calc = False
+    trigger_calc = False
     if st.button("🔁 추징세액 계산하기", type="primary"):
         st.session_state.followup_table = edited.copy()
-        st.session_state.trigger_calc = True
-st.session_state.followup_table = edited.copy()
+        st.session_state.followup_table = edited.copy()
         trigger_calc = True
 
-    if st.session_state.trigger_calc:
-schedule_records = []
+    if trigger_calc:
+        schedule_records = []
         for _, row in st.session_state.followup_table.iterrows():
             yidx = int(row["연차"])
             fol_total = int(row["사후연도 상시"])
@@ -308,7 +306,7 @@ schedule_records = []
         }
 
 # ── 재실행(예: 챗봇 입력) 이후에도 최근 결과를 계속 보여주기 ──
-if not st.session_state.trigger_calc:
+if not trigger_calc:
     _prev = st.session_state.get("last_calc")
     if _prev is not None and _prev.get("schedule_records"):
         import pandas as pd
