@@ -8,7 +8,8 @@ from datetime import datetime
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from PIL import Image as PILImage  # Reserved for future logo embedding
+from openpyxl.drawing.image import Image as XLImage
+from PIL import Image as PILImage
 
 from employment_tax_credit_calc import (
     CompanySize, Region, HeadcountInputs,
@@ -16,10 +17,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 시트 복원·에러수정)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 시트 복원·로고삽입)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("결과요약 시트 복원 + trigger_calc NameError 방지 + 문법 오류 정정")
+st.caption("결과요약 시트 복원 + 회사 로고(PNG) 상단 삽입 + trigger_calc NameError 방지 + 문법 오류 정정")
 
 # =====================
 # 세션 상태 기본 초기화
@@ -31,8 +32,8 @@ def _ensure(key, default):
 
 _ensure("saved_logo_png", None)
 _ensure("saved_company_name", None)
-_ensure("followup_table", None)              # 사후관리 표 유지용
-_ensure("calc_summary", None)                # 계산하기 직후 공제요약 유지
+_ensure("followup_table", None)
+_ensure("calc_summary", None)
 _ensure("last_calc", None)
 
 # ---- rerun 시 NameError 방지용 전역 플래그 초기화 ----
@@ -40,12 +41,7 @@ trigger_calc = False
 
 # ==== 사후관리 표 유틸 ====
 def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
-    """
-    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 덮어쓰지 않는다.
-    """
     import pandas as _pd
-
-    # 현재 표
     cur = st.session_state.get("followup_table")
     target_years = list(range(1, int(retention_years) + 1))
 
@@ -61,7 +57,6 @@ def ensure_followup_table(retention_years:int, default_total:int, default_youth:
             cur[col] = _pd.to_numeric(cur[col], errors="coerce").fillna(0).astype(int)
 
     map_exist = {int(r["연차"]): (int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))) for _, r in cur.iterrows()}
-
     rows = []
     for y in target_years:
         if y in map_exist:
@@ -159,11 +154,9 @@ with col3:
     converted_regular = st.number_input("정규직 전환 인원 (해당연도)", min_value=0, value=2, step=1)
     returned_parental = st.number_input("육아휴직 복귀 인원 (해당연도)", min_value=0, value=1, step=1)
 
-# 최저한세용 세전세액
 st.header("세액 한도/최저한세 옵션")
 tax_before_credit = st.number_input("세전세액(최저한세 적용 시 필요)", min_value=0, value=120_000_000, step=1)
 
-# 현재 입력값을 세션에 저장(챗봇 컨텍스트용)
 st.session_state.current_inputs = {
     "company_size": size.value,
     "region": region.value,
@@ -180,9 +173,6 @@ st.session_state.current_inputs = {
 st.divider()
 run = st.button("계산하기", type="primary", disabled=(params is None))
 
-# ============================
-# 계산하기: 공제액 산출 + 유지
-# ============================
 if run:
     if params is None:
         st.error("파라미터(JSON)를 먼저 불러오세요.")
@@ -200,7 +190,6 @@ if run:
     applied = apply_caps_and_min_tax(gross, params, tax_before_credit=int(tax_before_credit) if tax_before_credit else None)
     retention_years = params.retention_years[size]
 
-    # 공제 요약을 세션에 보존 (편집 중 rerun에도 유지)
     st.session_state.calc_summary = {
         "gross": int(gross),
         "applied": int(applied),
@@ -210,13 +199,8 @@ if run:
         "base_headcount": int(curr_total),
         "clawback_method": clawback_method,
     }
-
-    # 사후관리 기본표 초기화
     ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
 
-# ============================
-# 공제 요약 표시 (유지)
-# ============================
 summary = st.session_state.calc_summary
 if summary is not None:
     try:
@@ -229,9 +213,6 @@ if summary is not None:
     st.metric("적용 공제액 (최저한세/한도 후)", f"{summary['applied']:,} 원")
     st.write(f"유지기간(사후관리 대상): **{summary['retention_years']}년**")
 
-    # ============================
-    # 사후관리(추징) 시뮬레이션 - 폼 입력
-    # ============================
     st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
     st.caption("표를 입력한 뒤 아래 **[추징세액 계산하기]** 버튼을 누르면 표가 자동 반영되어 계산됩니다.")
 
@@ -288,7 +269,6 @@ if summary is not None:
             "total_clawback": total_clawback,
         }
 
-# ── 재실행 이후에도 최근 결과 유지 ──
 if not trigger_calc:
     _prev = st.session_state.get("last_calc")
     if _prev is not None and _prev.get("schedule_records"):
@@ -298,9 +278,6 @@ if not trigger_calc:
         st.dataframe(schedule_df, use_container_width=True)
         st.metric("추징세액 합계", f"{int(_prev.get('total_clawback',0)):,} 원")
 
-# ============================
-# 챗봇/컨텍스트
-# ============================
 safe_total_clawback = (st.session_state.last_calc["total_clawback"]
     if (st.session_state.get("last_calc") and "total_clawback" in st.session_state.last_calc)
     else 0)
@@ -317,10 +294,10 @@ st.session_state.calc_context = {
 }
 
 # ============================
-# 엑셀 생성 (요약 + 사후관리 결과표)
+# 엑셀 생성 (요약 + 사후관리 결과표) + 상단 로고 삽입
 # ============================
 def _build_excel():
-    """엑셀 내보내기: (1) 결과요약 시트, (2) 사후관리 결과표 시트."""
+    """엑셀 내보내기: (1) 결과요약 시트(상단 로고 포함), (2) 사후관리 결과표 시트."""
     buffer = io.BytesIO()
     wb = Workbook()
 
@@ -328,9 +305,37 @@ def _build_excel():
     ws_sum = wb.active
     ws_sum.title = "결과요약"
 
+    # 로고 삽입 (세션 보관 PNG 사용)
+    start_row = 1
+    logo_bytes = st.session_state.get("saved_logo_png")
+    if logo_bytes:
+        try:
+            pil_img = PILImage.open(io.BytesIO(logo_bytes))
+            # 모드/크기 정리
+            if pil_img.mode not in ("RGB", "RGBA"):
+                pil_img = pil_img.convert("RGBA")
+            max_w = 420
+            if pil_img.width > max_w:
+                ratio = max_w / float(pil_img.width)
+                pil_img = pil_img.resize((int(pil_img.width * ratio), int(pil_img.height * ratio)))
+            xl_img = XLImage(pil_img)
+            ws_sum.add_image(xl_img, "A1")
+            # 로고 아래 여백 확보
+            start_row = 8
+            # 로고 공간 시각적 확보를 위해 1~7행 높이 조정(선택)
+            ws_sum.row_dimensions[1].height = 24
+        except Exception:
+            # 로고가 깨져도 데이터 작성은 계속
+            start_row = 1
+
+    # 데이터 작성
     summary = st.session_state.get("calc_summary") or {}
     inputs = st.session_state.get("current_inputs") or {}
     last = st.session_state.get("last_calc") or {}
+
+    header_row = start_row
+    ws_sum.cell(row=header_row, column=1, value="항목")
+    ws_sum.cell(row=header_row, column=2, value="값")
 
     rows = [
         ("생성일시", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -347,16 +352,18 @@ def _build_excel():
         ("당해 상시/청년등", f"{inputs.get('curr_total', 0)}/{inputs.get('curr_youth', 0)}"),
         ("정규직 전환 / 육아휴직 복귀", f"{inputs.get('converted_regular', 0)} / {inputs.get('returned_parental', 0)}"),
     ]
-    ws_sum.append(["항목", "값"])
+    r = header_row + 1
     for k, v in rows:
-        ws_sum.append([k, v])
+        ws_sum.cell(row=r, column=1, value=k)
+        ws_sum.cell(row=r, column=2, value=v)
+        r += 1
 
     # 간단 서식
     bold = Font(bold=True)
-    for cell in ws_sum[1]:
-        cell.font = bold
+    ws_sum.cell(row=header_row, column=1).font = bold
+    ws_sum.cell(row=header_row, column=2).font = bold
     ws_sum.column_dimensions["A"].width = 28
-    ws_sum.column_dimensions["B"].width = 30
+    ws_sum.column_dimensions["B"].width = 36
 
     # ---- 시트2: 사후관리 결과표 ----
     ws = wb.create_sheet(title="사후관리 결과표")
@@ -370,11 +377,10 @@ def _build_excel():
     wb.save(buffer)
     return buffer.getvalue()
 
-# 다운로드 버튼 (요약만 있어도 활성화)
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 st.download_button(
-    label="엑셀 다운로드 (.xlsx, 요약+사후관리)",
+    label="엑셀 다운로드 (.xlsx, 로고+요약+사후관리)",
     file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     data=excel_bytes,
