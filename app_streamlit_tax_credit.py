@@ -233,6 +233,14 @@ if run:
         "retention_years": int(retention_years),
         "company_size": size.value,
         "region": region.value,
+        # 사후관리 계산에 필요한 값들
+        "prev_total": int(prev_total),
+        "prev_youth": int(prev_youth),
+        "curr_total": int(curr_total),
+        "curr_youth": int(curr_youth),
+        # 연차별 이전연도 기준값 배열(단일 값 반복으로 기본 셋업)
+        "prev_totals": [int(prev_total)] * int(retention_years),
+        "prev_youths": [int(prev_youth)] * int(retention_years),
         "base_headcount": int(curr_total),
         "clawback_method": clawback_method,
     }
