@@ -181,41 +181,61 @@ if run:
     # 보존형 초기화/정렬: 기존 값은 유지, 부족한 연차만 기본값으로 채움
     ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
 
+
 # ============================
 # 공제 요약 표시 (유지)
 # ============================
 summary = st.session_state.calc_summary
 if summary is not None:
+    # 유지기간이 바뀌어도 기존 값 보존하면서 연차만 맞춤
+    try:
+        ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
+    except Exception:
+        pass
 
-# 유지기간이 바뀌는 경우에도 기존 값 보존하면서 연차만 맞춰줌
-try:
-    ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
-except Exception:
-    pass
     st.subheader("① 공제액 계산 결과")
     st.metric("총공제액 (최저한세/한도 전)", f"{summary['gross']:,} 원")
     st.metric("적용 공제액 (최저한세/한도 후)", f"{summary['applied']:,} 원")
     st.write(f"유지기간(사후관리 대상): **{summary['retention_years']}년**")
 
     # ============================
-    # 사후관리(추징) 시뮬레이션 입력표
+    # 사후관리(추징) 시뮬레이션 - 폼 입력
     # ============================
     st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-    st.caption("연차별로 '사후연도 상시'와 '사후연도 청년등'을 직접 입력 후, 아래 버튼을 눌러 추징세액을 계산하세요.")
-    # 사용자가 입력한 값을 유지하기 위해 세션의 표를 항상 원본으로 사용
-    edited = st.data_editor(
-        st.session_state.followup_table.copy() if st.session_state.followup_table is not None else pd.DataFrame(),
-        num_rows="fixed",
-        hide_index=True,
-        key="followup_editor",
-    )
-    # 사용자가 편집하면 즉시 세션 상태로 반영 (기본값으로 돌아가는 문제 방지)
-    st.session_state.followup_table = edited.copy()
+    st.caption("표를 모두 입력한 뒤 아래 버튼으로 한 번에 반영/계산하세요. (입력 중에는 값이 튀지 않음)")
 
-    # 별도의 계산 버튼 (공제결과는 유지)
+    with st.form("followup_form", clear_on_submit=False):
+        buf_df = st.session_state.followup_table.copy() if st.session_state.followup_table is not None else pd.DataFrame()
+        colcfg = {
+            "연차": st.column_config.NumberColumn("연차", step=1, disabled=True),
+            "사후연도 상시": st.column_config.NumberColumn("사후연도 상시", step=1, min_value=0),
+            "사후연도 청년등": st.column_config.NumberColumn("사후연도 청년등", step=1, min_value=0),
+        }
+        edited = st.data_editor(
+            buf_df,
+            num_rows="fixed",
+            hide_index=True,
+            key="followup_editor",
+            column_config=colcfg,
+            use_container_width=True,
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            save_only = st.form_submit_button("📝 표 입력만 반영")
+        with c2:
+            save_and_calc = st.form_submit_button("🔁 표 반영 후 추징세액 계산")
+
+    trigger_calc = False
+    if save_only or save_and_calc:
+        st.session_state.followup_table = edited.copy()
+        trigger_calc = bool(save_and_calc)
+
     if st.button("🔁 추징세액 계산하기", type="primary"):
+        trigger_calc = True
+
+    if trigger_calc:
         schedule_records = []
-        for _, row in edited.iterrows():
+        for _, row in st.session_state.followup_table.iterrows():
             yidx = int(row["연차"])
             fol_total = int(row["사후연도 상시"])
             fol_youth = int(row.get("사후연도 청년등", 0))
@@ -237,17 +257,14 @@ except Exception:
         schedule_df = pd.DataFrame(schedule_records).sort_values("연차").reset_index(drop=True)
         total_clawback = int(schedule_df["추징세액"].sum()) if not schedule_df.empty else 0
 
-        # 결과 표시
         st.dataframe(schedule_df, use_container_width=True)
         st.metric("추징세액 합계", f"{total_clawback:,} 원")
 
-        # rerun에도 유지되도록 저장
         st.session_state.last_calc = {
             **summary,
             "schedule_records": schedule_df.to_dict(orient="records"),
             "total_clawback": total_clawback,
         }
-
 # ============================
 # 챗봇/컨텍스트
 # ============================
