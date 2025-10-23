@@ -222,7 +222,7 @@ with st.sidebar:
             json.dump(demo_cfg, f, ensure_ascii=False)
         params = load_params_from_json(tmp_path)
         os.remove(tmp_path)
-        st.info("예시 파라미터를 사용 중입니다. (업로드 시 자동 대체)")
+        st.info("미업로드시 예시 파라미터를 사용)")
 
 st.subheader("기업 정보 및 사후관리 옵션")
 colA, colB = st.columns(2)
