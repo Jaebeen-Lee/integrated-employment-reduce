@@ -243,7 +243,7 @@ if summary is not None:
     # 사후관리(추징) 시뮬레이션 - 폼 입력
     # ============================
     st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-    st.caption("표를 모두 입력한 뒤 아래 버튼으로 한 번에 반영/계산하세요. (입력 중에는 값이 튀지 않음)")
+    st.caption("표를 입력한 뒤 아래 **[추징세액 계산하기]** 버튼을 누르면 표가 자동 반영되어 계산됩니다.")
 
     with st.form("followup_form", clear_on_submit=False):
         buf_df = st.session_state.followup_table.copy() if st.session_state.followup_table is not None else pd.DataFrame()
@@ -262,16 +262,12 @@ if summary is not None:
         )
         c1, c2 = st.columns(2)
         with c1:
-            save_only = st.form_submit_button("📝 표 입력만 반영")
+            pass
         with c2:
-            save_and_calc = st.form_submit_button("🔁 표 반영 후 추징세액 계산")
+            pass
 
-    trigger_calc = False
-    if save_only or save_and_calc:
+    trigger_calc = Falseif st.button("🔁 추징세액 계산하기", type="primary"):
         st.session_state.followup_table = edited.copy()
-        trigger_calc = bool(save_and_calc)
-
-    if st.button("🔁 추징세액 계산하기", type="primary"):
         trigger_calc = True
 
     if trigger_calc:
@@ -406,27 +402,9 @@ def _build_excel():
                 if cell.style != "KRW":
                     cell.alignment = right
 
-    # ▶ 사후관리 입력표 시트
-    ws_in = wb.create_sheet("사후관리 입력표")
-    headers_in = ["연차", "사후연도 상시", "사후연도 청년등"]
-    ws_in.append(headers_in)
-    fup = st.session_state.get("followup_table")
-    if fup is not None and not fup.empty:
-        for _, r in fup.iterrows():
-            ws_in.append([int(r["연차"]), int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))])
-
-    for cell in ws_in[1]:
-        cell.fill = header_fill; cell.border = border_all; cell.alignment = center; cell.font = Font(bold=True)
-    for r in range(2, ws_in.max_row+1):
-        ws_in.cell(row=r, column=1).alignment = center
-        for c in [2,3]:
-            ws_in.cell(row=r, column=c).alignment = right
-        for c in [1,2,3]:
-            ws_in.cell(row=r, column=c).border = border_all
-    for col, w in zip(["A","B","C"], [10, 18, 18]):
-        ws_in.column_dimensions[col].width = w
-
-    # ▶ 사후관리 결과표 시트(계산한 경우만)
+    # ▶ 사후관리 입력표 시트 제거 (요청사항)
+    # 입력표 시트 생성을 생략합니다.
+# ▶ 사후관리 결과표 시트(계산한 경우만)
     if last_calc is not None:
         ws_res = wb.create_sheet("사후관리 결과표")
         headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
