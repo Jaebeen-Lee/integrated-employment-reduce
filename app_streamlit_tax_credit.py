@@ -304,11 +304,24 @@ if summary is not None:
             "schedule_records": schedule_df.to_dict(orient="records"),
             "total_clawback": total_clawback,
         }
+
+# ── 재실행(예: 챗봇 입력) 이후에도 최근 결과를 계속 보여주기 ──
+if not trigger_calc:
+    _prev = st.session_state.get("last_calc")
+    if _prev is not None and _prev.get("schedule_records"):
+        import pandas as pd
+        schedule_df = pd.DataFrame(_prev["schedule_records"])
+        st.subheader("사후관리(추징) 결과 (최근 계산)")
+        st.dataframe(schedule_df, use_container_width=True)
+        st.metric("추징세액 합계", f"{int(_prev.get('total_clawback',0)):,} 원")
+
 # ============================
 # 챗봇/컨텍스트
 # ============================
 # 안전 가드: total_clawback 기본값
-safe_total_clawback = st.session_state.last_calc["total_clawback"] if (st.session_state.last_calc and "total_clawback" in st.session_state.last_calc) else 0
+safe_total_clawback = (st.session_state.last_calc["total_clawback"]
+    if (st.session_state.get("last_calc") and "total_clawback" in st.session_state.last_calc)
+    else 0)
 
 # 챗봇 컨텍스트 저장 (공제 결과는 삭제하지 않음)
 st.session_state.calc_context = {
