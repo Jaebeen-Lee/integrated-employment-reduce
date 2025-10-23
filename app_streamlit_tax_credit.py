@@ -1,4 +1,4 @@
-﻿﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # === Force scroll to top on initial load only ===
 import streamlit.components.v1 as _components
