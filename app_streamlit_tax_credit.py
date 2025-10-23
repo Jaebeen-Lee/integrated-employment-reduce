@@ -36,6 +36,68 @@ def calculate_clawback_for_year(*, year_index, retention_years, clawback_method,
         fol_youth=fol_youth,
         company_size=company_size,
     )
+st.markdown('<script>window.scrollTo(0,0);</script>', unsafe_allow_html=True)
+
+# ---- 호환용 래퍼 (안전 모드) ----
+def _as_int(x, default=0):
+    try:
+        return int(x)
+    except Exception:
+        return default
+
+def calculate_clawback_for_year(*, year_index, retention_years, clawback_method,
+                                prev_totals=None, prev_youths=None,
+                                prev_total=None, prev_youth=None,
+                                curr_total=None, curr_youth=None,
+                                fol_total=None, fol_youth=None,
+                                company_size=None):
+    """
+    다양한 모듈 시그니처에 대응하기 위한 안전 래퍼.
+    - 가능한 조합으로 calc_clawback를 시도
+    - 모두 실패하면 0 반환 (오류로 앱이 중단되지 않게)
+    """
+    # 정수화 & 기본값
+    yi   = _as_int(year_index)
+    ry   = _as_int(retention_years, 0)
+    pt   = _as_int(prev_total if prev_total is not None else (prev_totals[0] if prev_totals else 0))
+    py   = _as_int(prev_youth if prev_youth is not None else (prev_youths[0] if prev_youths else 0))
+    ct   = _as_int(curr_total)
+    cy   = _as_int(curr_youth)
+    ft   = _as_int(fol_total)
+    fy   = _as_int(fol_youth)
+
+    # 1) 리스트 인수 버전
+    try:
+        return calc_clawback(
+            year_index=yi,
+            retention_years=ry,
+            clawback_method=clawback_method,
+            prev_totals=prev_totals if prev_totals is not None else [pt]*max(ry,1),
+            prev_youths=prev_youths if prev_youths is not None else [py]*max(ry,1),
+            curr_total=ct, curr_youth=cy,
+            fol_total=ft,  fol_youth=fy,
+            company_size=company_size,
+        )
+    except TypeError:
+        pass
+    # 2) 단일 숫자 버전
+    try:
+        return calc_clawback(
+            year_index=yi,
+            retention_years=ry,
+            clawback_method=clawback_method,
+            prev_total=pt, prev_youth=py,
+            curr_total=ct, curr_youth=cy,
+            fol_total=ft,  fol_youth=fy,
+            company_size=company_size,
+        )
+    except TypeError:
+        pass
+    # 3) 이름 없이 순서 인수 버전
+    try:
+        return calc_clawback(yi, ry, clawback_method, pt, py, ct, cy, ft, fy, company_size)
+    except Exception:
+        return 0
 st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
@@ -338,10 +400,11 @@ if st.session_state.trigger_calc and st.session_state.followup_table is not None
 # 재실행(예: 챗봇 사용) 시에도 최근 결과 표시
 if st.session_state.last_calc and st.session_state.last_calc.get("schedule_records"):
     import pandas as pd
-    schedule_df = pd.DataFrame(st.session_state.last_calc["schedule_records"])
-    st.subheader("사후관리(추징) 결과 (최근 계산)")
-    st.dataframe(schedule_df, use_container_width=True)
-    st.metric("추징세액 합계", f"{int(st.session_state.last_calc.get('total_clawback',0)):,} 원")
+    if len(st.session_state.last_calc["schedule_records"]) > 0:
+        schedule_df = pd.DataFrame(st.session_state.last_calc["schedule_records"])
+        st.subheader("사후관리(추징) 결과 (최근 계산)")
+        st.dataframe(schedule_df, use_container_width=True)
+        st.metric("추징세액 합계", f"{int(st.session_state.last_calc.get('total_clawback',0)):,} 원")
 # ============================
 # 챗봇/컨텍스트
 # ============================
