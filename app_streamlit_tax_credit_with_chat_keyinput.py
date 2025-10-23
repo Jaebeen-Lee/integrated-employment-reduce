@@ -29,9 +29,9 @@ if "saved_company_name" not in st.session_state:
     st.session_state.saved_company_name = None
 
 with st.sidebar:
-    st.header("1) 정책 파라미터")
-    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
-    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
+    st.header("1) 최근 시행령 적용")
+    uploaded = st.file_uploader("최근 시행령 JSON 업로드", type=["json"], accept_multiple_files=False)
+    default_info = st.toggle("예시 파라미터 사용", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
