@@ -20,7 +20,7 @@ from employment_tax_credit_calc import (
 st.set_page_config(page_title="통합고용세액공제 계산기", layout="wide")
 
 st.title("통합고용세액공제 계산기")
-st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완.")
+st.caption("조특법 제29조의8에 따른 통합고용세액공제를 계산합니다")
 
 # 세션 상태
 if "saved_logo_png" not in st.session_state:
