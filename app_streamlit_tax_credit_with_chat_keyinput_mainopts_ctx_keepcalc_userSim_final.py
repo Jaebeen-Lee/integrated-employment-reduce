@@ -1,5 +1,78 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+
+# ---------------------------------------------
+# 시뮬레이션 렌더 함수 (요약이 있으면 항상 표/결과 표시)
+def _render_simulation_pane(params, size, region, clawback_method):
+    import pandas as pd
+    st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
+
+    # 요약이 없으면 안내
+    if "summary" not in st.session_state:
+        st.info("먼저 상단에서 **계산하기** 버튼을 눌러 계산 요약을 생성하세요.")
+        return
+
+    gross = int(st.session_state.summary["gross"])
+    applied = int(st.session_state.summary["applied"])
+    retention_years = int(st.session_state.summary["retention_years"])
+    curr_total = int(st.session_state.summary["curr_total"])
+    curr_youth = int(st.session_state.summary["curr_youth"])
+
+    years = [1, 2, 3]
+
+    # 편집 표를 세션에 보존
+    if "sim_df" not in st.session_state or st.session_state.sim_df is None:
+        st.session_state.sim_df = pd.DataFrame(
+            [{"연차": yr, "사후연도 상시": curr_total, "사후연도 청년등": curr_youth} for yr in years]
+        )
+
+    edited = st.data_editor(st.session_state.sim_df, num_rows="fixed", hide_index=True, key="sim_editor")
+    st.session_state.sim_df = edited  # 입력해도 사라지지 않도록 세션 반영
+
+    st.caption("연차별 인원을 입력한 뒤 아래 버튼을 눌러 추징세액을 계산하세요.")
+    if st.button("🔁 추징세액 계산하기", type="primary", key="btn_clawback"):
+        schedule = []
+        for _, row in st.session_state.sim_df.iterrows():
+            yidx = int(row["연차"])
+            fol_total = int(row["사후연도 상시"])
+            fol_youth = int(row["사후연도 청년등"]) if "사후연도 청년등" in row else 0
+
+            claw = calc_clawback(
+                credit_applied=applied,
+                base_headcount_at_credit=curr_total,
+                headcount_in_followup_year=fol_total,
+                retention_years_for_company=retention_years,
+                year_index_from_credit=yidx,
+                method=clawback_method,
+            )
+            schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
+
+        schedule_df = pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
+        st.dataframe(schedule_df, use_container_width=True)
+        total_clawback = int(schedule_df["추징세액"].sum())
+        st.metric("추징세액 합계", f"{total_clawback:,} 원")
+
+        # 결과도 세션에 보존 (rerun 유지)
+        st.session_state.last_calc = {
+            "gross": gross,
+            "applied": applied,
+            "retention_years": retention_years,
+            "company_size": size.value if hasattr(size, "value") else str(size),
+            "region": region.value if hasattr(region, "value") else str(region),
+            "clawback_method": clawback_method,
+            "base_headcount": curr_total,
+            "schedule_records": schedule_df.to_dict(orient="records"),
+            "total_clawback": total_clawback,
+        }
+    else:
+        # 이전 계산 결과가 있으면 계속 표시
+        if st.session_state.get("last_calc") and st.session_state.last_calc.get("schedule_records"):
+            _df = pd.DataFrame(st.session_state.last_calc["schedule_records"])
+            st.dataframe(_df, use_container_width=True)
+            tc = int(st.session_state.last_calc.get("total_clawback", _df["추징세액"].sum()))
+            st.metric("추징세액 합계", f"{tc:,} 원")
+# ---------------------------------------------
+
 import json
 import io
 import os
@@ -347,78 +420,6 @@ else:
             st.info("좌측에서 파라미터(JSON)를 불러오고, 인원을 입력한 뒤 **계산하기**를 눌러주세요.")
 
 
-
-# ---------------------------------------------
-# 시뮬레이션 렌더 함수 (요약이 있으면 항상 표/결과 표시)
-def _render_simulation_pane(params, size, region, clawback_method):
-    import pandas as pd
-    st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-
-    # 요약이 없으면 안내
-    if "summary" not in st.session_state:
-        st.info("먼저 상단에서 **계산하기** 버튼을 눌러 계산 요약을 생성하세요.")
-        return
-
-    gross = int(st.session_state.summary["gross"])
-    applied = int(st.session_state.summary["applied"])
-    retention_years = int(st.session_state.summary["retention_years"])
-    curr_total = int(st.session_state.summary["curr_total"])
-    curr_youth = int(st.session_state.summary["curr_youth"])
-
-    years = [1, 2, 3]
-
-    # 편집 표를 세션에 보존
-    if "sim_df" not in st.session_state or st.session_state.sim_df is None:
-        st.session_state.sim_df = pd.DataFrame(
-            [{"연차": yr, "사후연도 상시": curr_total, "사후연도 청년등": curr_youth} for yr in years]
-        )
-
-    edited = st.data_editor(st.session_state.sim_df, num_rows="fixed", hide_index=True, key="sim_editor")
-    st.session_state.sim_df = edited  # 입력해도 사라지지 않도록 세션 반영
-
-    st.caption("연차별 인원을 입력한 뒤 아래 버튼을 눌러 추징세액을 계산하세요.")
-    if st.button("🔁 추징세액 계산하기", type="primary", key="btn_clawback"):
-        schedule = []
-        for _, row in st.session_state.sim_df.iterrows():
-            yidx = int(row["연차"])
-            fol_total = int(row["사후연도 상시"])
-            fol_youth = int(row["사후연도 청년등"]) if "사후연도 청년등" in row else 0
-
-            claw = calc_clawback(
-                credit_applied=applied,
-                base_headcount_at_credit=curr_total,
-                headcount_in_followup_year=fol_total,
-                retention_years_for_company=retention_years,
-                year_index_from_credit=yidx,
-                method=clawback_method,
-            )
-            schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
-
-        schedule_df = pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
-        st.dataframe(schedule_df, use_container_width=True)
-        total_clawback = int(schedule_df["추징세액"].sum())
-        st.metric("추징세액 합계", f"{total_clawback:,} 원")
-
-        # 결과도 세션에 보존 (rerun 유지)
-        st.session_state.last_calc = {
-            "gross": gross,
-            "applied": applied,
-            "retention_years": retention_years,
-            "company_size": size.value if hasattr(size, "value") else str(size),
-            "region": region.value if hasattr(region, "value") else str(region),
-            "clawback_method": clawback_method,
-            "base_headcount": curr_total,
-            "schedule_records": schedule_df.to_dict(orient="records"),
-            "total_clawback": total_clawback,
-        }
-    else:
-        # 이전 계산 결과가 있으면 계속 표시
-        if st.session_state.get("last_calc") and st.session_state.last_calc.get("schedule_records"):
-            _df = pd.DataFrame(st.session_state.last_calc["schedule_records"])
-            st.dataframe(_df, use_container_width=True)
-            tc = int(st.session_state.last_calc.get("total_clawback", _df["추징세액"].sum()))
-            st.metric("추징세액 합계", f"{tc:,} 원")
-# ---------------------------------------------
 # ==============================
 # 💬 OpenAI 챗봇 (메인 화면 하단)
 # ==============================
