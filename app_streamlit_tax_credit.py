@@ -29,50 +29,19 @@ components.html(
     """
     <script>
     (function() {
-      const start = Date.now();
-      function forceTop() {
-        try {
-          // 자동 포커스로 인한 스크롤 이동 방지
-          const ae = document.activeElement;
-          if (ae && ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(ae.tagName)) { ae.blur(); }
-        } catch(e) {}
-        try { window.scrollTo(0, 0); } catch(e) {}
-      }
-      // 즉시 & 주기적 강제 상단 (약 3.5초)
+      function forceTop() { try { window.scrollTo({top: 0, behavior: 'auto'}); } catch(e) {} }
       forceTop();
-      const iv = setInterval(() => {
-        forceTop();
-        if (Date.now() - start > 3500) clearInterval(iv);
-      }, 100);
-
-      // 초기 몇 초 동안 사용자/시스템 이벤트가 스크롤을 내려도 다시 올림
-      const reForce = (ev) => {
-        if (Date.now() - start < 3600) { forceTop(); }
-        else {
-          window.removeEventListener('focusin', reForce, true);
-          window.removeEventListener('click', reForce, true);
-          window.removeEventListener('keydown', reForce, true);
-        }
-      };
-      window.addEventListener('focusin', reForce, true);
-      window.addEventListener('click', reForce, true);
-      window.addEventListener('keydown', reForce, true);
-
-      // 레이아웃/DOM 변경으로 밀릴 때 보정
-      const mo = new MutationObserver(() => {
-        if (Date.now() - start < 3600) { forceTop(); }
-        else { mo.disconnect(); }
-      });
-      mo.observe(document.body, {childList: true, subtree: true});
-
-      // 페이지 가시성 전환 때도 보정
+      let ticks = 0;
+      const iv = setInterval(() => { forceTop(); if (++ticks > 12) clearInterval(iv); }, 100);
       document.addEventListener('visibilitychange', () => { if (!document.hidden) forceTop(); });
-      window.addEventListener('load', forceTop);
+      new MutationObserver(() => { forceTop(); }).observe(document.body, {childList: true, subtree: true});
     })();
     </script>
     """,
     height=0,
-)st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
+)
+
+st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
 st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
 
 # =====================
