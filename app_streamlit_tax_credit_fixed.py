@@ -312,10 +312,10 @@ if run:
         ws.cell(row=row_cursor+1, column=4, value=f"기업규모/지역: {size.value}/{region.value}")
 
         start = row_cursor + 3
-# 가져오기: 세션에 저장된 스케줄/합계 (없으면 기본값)
-schedule_records = st.session_state.get("last_calc", {}).get("schedule_records", [])
-total_clawback = int(st.session_state.get("last_calc", {}).get("total_clawback", 0))
-data = [
+        # 가져오기: 세션에 저장된 스케줄/합계 (없으면 기본값)
+        schedule_records = st.session_state.get("last_calc", {}).get("schedule_records", [])
+        total_clawback = int(st.session_state.get("last_calc", {}).get("total_clawback", 0))
+        data = [
             ["항목", "값"],
             ["총공제액 (최저한세/한도 전)", int(gross)],
             ["적용 공제액 (최저한세/한도 후)", int(applied)],
@@ -344,21 +344,30 @@ data = [
 
         # 다년 추징표 시트
         ws2 = wb.create_sheet("Clawback Schedule")
-        headers = ["연차", "사후연도 인원", "추징세액"]
+        headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
         ws2.append(headers)
-        for row in schedule:
-            ws2.append([row["연차"], row["사후연도 인원"], row["추징세액"]])
+        for row in schedule_records:
+            ws2.append([
+                row.get("연차"),
+                row.get("사후연도 상시"),
+                row.get("사후연도 청년등", 0),
+                row.get("추징세액")
+            ])
 
         for cell in ws2[1]:
             cell.fill = header_fill; cell.border = border_all; cell.alignment = center; cell.font = Font(bold=True)
 
-        for r in range(2, 2 + len(schedule)):
+        for r in range(2, 2 + len(schedule_records)):
             ws2.cell(row=r, column=1).alignment = center
             ws2.cell(row=r, column=2).alignment = right
-            ws2.cell(row=r, column=3).style = "KRW"
-            for c in range(1, 4):
+            ws2.cell(row=r, column=3).alignment = right
+            ws2.cell(row=r, column=4).style = "KRW"
+            for c in range(1, 5):
                 ws2.cell(row=r, column=c).border = border_all
 
+        ws.column_dimensions["A"].width = 22; ws.column_dimensions["B"].width = 26
+        for col, w in zip(["A","B","C","D"], [10, 18, 18, 18]):
+            ws2.column_dimensions[col].width = w
         ws.column_dimensions["A"].width = 22; ws.column_dimensions["B"].width = 26
         for col, w in zip(["A","B","C"], [10, 18, 18]):
             ws2.column_dimensions[col].width = w
