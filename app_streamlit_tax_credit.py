@@ -6,6 +6,7 @@ import os
 import tempfile
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -18,23 +19,71 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 워터마크+상단스크롤·단일파일)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
 
-# --- 항상 화면을 맨 위로 스크롤 ---
-st.markdown(
+# =====================
+# 상단 스크롤 고정 (강제)
+# =====================
+import streamlit.components.v1 as components
+components.html(
     """
     <script>
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    (function() {
+      function forceTop() { try { window.scrollTo({top: 0, behavior: 'auto'}); } catch(e) {} }
+      forceTop();
+      let ticks = 0;
+      const iv = setInterval(() => { forceTop(); if (++ticks > 12) clearInterval(iv); }, 100);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) forceTop(); });
+      new MutationObserver(() => { forceTop(); }).observe(document.body, {childList: true, subtree: true});
+    })();
     </script>
     """,
-    unsafe_allow_html=True
+    height=0,
 )
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("엑셀 결과요약 상단에 연한 로고 워터마크 삽입 + 실행 시 스크롤 자동 상단 이동 (모듈 의존성 제거 단일 파일)")
+st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
 
 # =====================
-# 세션 상태 기본 초기화
+# 로컬 캐시 유틸
+# =====================
+def _cache_dir() -> Path:
+    try:
+        here = Path(__file__).parent
+    except NameError:
+        here = Path(".").resolve()
+    d = here / ".app_cache"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+def save_cached_logo(png_bytes: bytes):
+    try:
+        ( _cache_dir() / "logo.png" ).write_bytes(png_bytes)
+    except Exception:
+        pass
+
+def load_cached_logo() -> bytes | None:
+    p = _cache_dir() / "logo.png"
+    return p.read_bytes() if p.exists() else None
+
+def save_prefs(company_name: str):
+    try:
+        pref = {"company_name": company_name}
+        ( _cache_dir() / "prefs.json" ).write_text(json.dumps(pref, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+def load_prefs() -> dict:
+    p = _cache_dir() / "prefs.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+# =====================
+# 세션 상태 기본 초기화 + 캐시 로드
 # =====================
 def _ensure(key, default):
     if key not in st.session_state:
@@ -46,6 +95,15 @@ _ensure("saved_company_name", None)
 _ensure("followup_table", None)
 _ensure("calc_summary", None)
 _ensure("last_calc", None)
+
+# 캐시에서 로고/기관명 불러오기 (세션이 비어 있을 때만)
+if st.session_state.get("saved_logo_png") is None:
+    cached = load_cached_logo()
+    if cached:
+        st.session_state.saved_logo_png = cached
+prefs = load_prefs()
+if st.session_state.get("saved_company_name") is None and prefs.get("company_name"):
+    st.session_state.saved_company_name = prefs["company_name"]
 
 # ---- rerun 시 NameError 방지용 전역 플래그 초기화 ----
 trigger_calc = False
@@ -85,18 +143,21 @@ with st.sidebar:
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
     logo_file = st.file_uploader("회사 로고 (PNG 권장)", type=["png"], accept_multiple_files=False)
-    remember_logo = st.checkbox("이 로고를 계속 사용(세션에 저장)", value=True)
+    remember_logo = st.checkbox("이 로고/기관명을 계속 사용(앱 캐시에 저장)", value=True)
 
     logo_bytes = None
     if logo_file is not None:
         logo_bytes = logo_file.getvalue()
         if remember_logo:
             st.session_state.saved_logo_png = logo_bytes
+            save_cached_logo(logo_bytes)  # 디스크 캐시
     elif st.session_state.saved_logo_png is not None:
-        logo_bytes = st.session_state.saved_logo_png
+        logo_bytes = st.session_state.saved_logo_png or load_cached_logo()
 
-    if company_name and remember_logo:
+    if company_name:
         st.session_state.saved_company_name = company_name
+        if remember_logo:
+            save_prefs(company_name)
 
     params: PolicyParameters = None
     if uploaded is not None:
@@ -318,7 +379,7 @@ def _build_excel():
 
     # 로고 워터마크 삽입: 임시파일에 저장 후 openpyxl로 로드 (A1 위치)
     start_row = 1
-    logo_bytes = st.session_state.get("saved_logo_png")
+    logo_bytes = st.session_state.get("saved_logo_png") or load_cached_logo()
     if logo_bytes:
         try:
             img = PILImage.open(io.BytesIO(logo_bytes))
