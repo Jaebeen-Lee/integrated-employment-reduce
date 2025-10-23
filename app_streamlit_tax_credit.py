@@ -43,7 +43,7 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용증대 세액공제 계산기", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
 # Force scroll to top on load
 _inject_force_top()
 
@@ -68,8 +68,8 @@ components.html(
     height=0,
 )
 
-st.title("통합고용증대 세액공제 계산기")
-st.caption("조특법 §29조의8에 따른 통합고용증대 세액공제를 계산합니다.")
+st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
+st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
 
 # =====================
 # 로컬 캐시 유틸
@@ -163,9 +163,40 @@ def ensure_followup_table(retention_years:int, default_total:int, default_youth:
     st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
 
 with st.sidebar:
-    st.header("1) 최근 법령 적용")
-    uploaded = st.file_uploader("최근 법령 JSON 업로드", type=["json"], accept_multiple_files=False)
-    default_info = st.toggle("예시 파라미터 사용", value=True)
+    st.header("1) 정책 파라미터")
+    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
+    
+    # 빈 템플릿(JSON) 다운로드 버튼
+    try:
+        _blank_template = {
+            "per_head_basic": {
+                "중소기업": {"수도권": 0, "지방": 0},
+                "중견기업": {"수도권": 0, "지방": 0},
+                "대기업":   {"수도권": 0, "지방": 0}
+            },
+            "per_head_youth": {
+                "중소기업": {"수도권": 0, "지방": 0},
+                "중견기업": {"수도권": 0, "지방": 0},
+                "대기업":   {"수도권": 0, "지방": 0}
+            },
+            "per_head_conversion": 0,
+            "per_head_return_from_parental": 0,
+            "retention_years": {"중소기업": 3, "중견기업": 3, "대기업": 2},
+            "max_credit_total": None,
+            "min_tax_limit_rate": 0.07,
+            "excluded_industries": []
+        }
+        _blank_bytes = json.dumps(_blank_template, ensure_ascii=False, indent=2).encode("utf-8")
+        st.download_button(
+            label="빈 템플릿(JSON) 다운로드",
+            data=_blank_bytes,
+            file_name="params_template_blank.json",
+            mime="application/json",
+            help="필드 구조만 포함된 템플릿입니다. 값을 채워 업로드하세요."
+        )
+    except Exception as _e:
+        st.caption(f"템플릿 생성 오류: {_e}")
+    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
@@ -222,7 +253,7 @@ with st.sidebar:
             json.dump(demo_cfg, f, ensure_ascii=False)
         params = load_params_from_json(tmp_path)
         os.remove(tmp_path)
-        st.info("미업로드시 예시 파라미터를 사용)")
+        st.info("예시 파라미터를 사용 중입니다. (업로드 시 자동 대체)")
 
 st.subheader("기업 정보 및 사후관리 옵션")
 colA, colB = st.columns(2)
@@ -372,7 +403,7 @@ if not trigger_calc:
     if _prev is not None and _prev.get("schedule_records"):
         import pandas as pd
         schedule_df = pd.DataFrame(_prev["schedule_records"])
-        st.subheader("사후관리(추징) 결과")
+        st.subheader("사후관리(추징) 결과 (최근 계산)")
         st.dataframe(schedule_df, use_container_width=True)
         st.metric("추징세액 합계", f"{int(_prev.get('total_clawback',0)):,} 원")
 
@@ -488,7 +519,7 @@ def _build_excel():
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 st.download_button(
-    label="엑셀 다운로드 (.xlsx)",
+    label="엑셀 다운로드 (.xlsx, 연한 로고+요약+사후관리)",
     file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     data=excel_bytes,
@@ -521,7 +552,7 @@ load_dotenv()
 
 st.divider()
 st.header("💬 OpenAI 챗봇")
-st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요.")
+st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요. (모델: gpt-4o-mini)")
 
 if "openai_api_key" not in st.session_state:
     st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
