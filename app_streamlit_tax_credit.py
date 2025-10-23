@@ -18,6 +18,24 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
+
+# 호환용 래퍼: 예전 코드에서 사용하던 이름 유지
+def calculate_clawback_for_year(*, year_index, retention_years, clawback_method,
+                                prev_totals, prev_youths, curr_total, curr_youth,
+                                fol_total, fol_youth, company_size):
+    """calc_clawback 함수로 위임 (호출 시그니처 동일 유지)."""
+    return calc_clawback(
+        year_index=year_index,
+        retention_years=retention_years,
+        clawback_method=clawback_method,
+        prev_totals=prev_totals,
+        prev_youths=prev_youths,
+        curr_total=curr_total,
+        curr_youth=curr_youth,
+        fol_total=fol_total,
+        fol_youth=fol_youth,
+        company_size=company_size,
+    )
 st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
