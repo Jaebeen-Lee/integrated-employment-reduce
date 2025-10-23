@@ -166,7 +166,38 @@ with st.sidebar:
     st.header("1) 정책 파라미터")
     uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
     
-    # 빈 템플릿(JSON) 다운로드 버튼
+    
+    # 예시 파라미터(JSON) 다운로드 버튼
+    try:
+        _example_cfg = {
+            "per_head_basic": {
+                "중소기업": {"수도권": 1200000, "지방": 1300000},
+                "중견기업": {"수도권": 900000, "지방": 1000000},
+                "대기업":   {"수도권": 600000, "지방": 700000}
+            },
+            "per_head_youth": {
+                "중소기업": {"수도권": 1500000, "지방": 1600000},
+                "중견기업": {"수도권": 1100000, "지방": 1200000},
+                "대기업":   {"수도권": 800000,  "지방": 900000}
+            },
+            "per_head_conversion": 800000,
+            "per_head_return_from_parental": 800000,
+            "retention_years": {"중소기업": 3, "중견기업": 3, "대기업": 2},
+            "max_credit_total": null,
+            "min_tax_limit_rate": 0.07,
+            "excluded_industries": ["유흥주점업", "기타소비성서비스업"]
+        }
+        _example_bytes = json.dumps(_example_cfg, ensure_ascii=False, indent=2).encode("utf-8")
+        st.download_button(
+            label="예시 파라미터(JSON) 다운로드",
+            data=_example_bytes,
+            file_name="params_example_latest.json",
+            mime="application/json",
+            help="최근 법령 기준으로 작성된 예시 파라미터입니다. 내려받아 수정 후 업로드하세요."
+        )
+    except Exception as _e:
+        st.caption(f"예시 파일 생성 오류: {_e}")
+# 빈 템플릿(JSON) 다운로드 버튼
     try:
         _blank_template = {
             "per_head_basic": {
