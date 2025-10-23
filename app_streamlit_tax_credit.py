@@ -7,9 +7,8 @@ import pandas as pd
 from datetime import datetime
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, NamedStyle
-from openpyxl.drawing.image import Image as XLImage
-from PIL import Image as PILImage
+from openpyxl.styles import Font
+from PIL import Image as PILImage  # Reserved for future logo embedding
 
 from employment_tax_credit_calc import (
     CompanySize, Region, HeadcountInputs,
@@ -17,10 +16,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 시트 복원·에러수정)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완. (사후관리 입력/유지 버그 수정 + 결과요약 시트 복원)")
+st.caption("결과요약 시트 복원 + trigger_calc NameError 방지 + 문법 오류 정정")
 
 # =====================
 # 세션 상태 기본 초기화
@@ -37,36 +36,30 @@ _ensure("calc_summary", None)                # 계산하기 직후 공제요약 
 _ensure("last_calc", None)
 
 # ---- rerun 시 NameError 방지용 전역 플래그 초기화 ----
-# Streamlit의 rerun에서 버튼이 눌리지 않으면 해당 변수가 없을 수 있으므로 미리 False로 정의
 trigger_calc = False
 
-# ==== 사후관리 표 유틸을 상단으로 이동 (NameError 방지) ====
+# ==== 사후관리 표 유틸 ====
 def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
     """
-    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 절대 덮어쓰지 않는다.
-    필요 시 새 연차만 기본값으로 추가하고, 남는 연차는 제거한다.
+    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 덮어쓰지 않는다.
     """
     import pandas as _pd
 
     # 현재 표
     cur = st.session_state.get("followup_table")
-    # 목표 인덱스
     target_years = list(range(1, int(retention_years) + 1))
 
-    if cur is None or cur.empty:
+    if cur is None or getattr(cur, "empty", True):
         st.session_state.followup_table = _pd.DataFrame(
             [{"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)} for y in target_years]
         )
         return
 
-    # 사본으로 작업
     cur = cur.copy()
-    # dtype 정리
     for col in ["연차", "사후연도 상시", "사후연도 청년등"]:
         if col in cur.columns:
             cur[col] = _pd.to_numeric(cur[col], errors="coerce").fillna(0).astype(int)
 
-    # 현재 연차 -> 값 맵
     map_exist = {int(r["연차"]): (int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))) for _, r in cur.iterrows()}
 
     rows = []
@@ -76,10 +69,7 @@ def ensure_followup_table(retention_years:int, default_total:int, default_youth:
             rows.append({"연차": y, "사후연도 상시": tot, "사후연도 청년등": yth})
         else:
             rows.append({"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)})
-
     st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
-
-                   # 추징세액 계산하기 결과 유지
 
 with st.sidebar:
     st.header("1) 정책 파라미터")
@@ -221,17 +211,14 @@ if run:
         "clawback_method": clawback_method,
     }
 
-    # 사후관리 기본표 초기화(최초 한 번만) — 사용자가 값 입력 후에는 덮어쓰지 않음
-    # 보존형 초기화/정렬: 기존 값은 유지, 부족한 연차만 기본값으로 채움
+    # 사후관리 기본표 초기화
     ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
-
 
 # ============================
 # 공제 요약 표시 (유지)
 # ============================
 summary = st.session_state.calc_summary
 if summary is not None:
-    # 유지기간이 바뀌어도 기존 값 보존하면서 연차만 맞춤
     try:
         ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
     except Exception:
@@ -263,11 +250,6 @@ if summary is not None:
             column_config=colcfg,
             use_container_width=True,
         )
-        c1, c2 = st.columns(2)
-        with c1:
-            pass
-        with c2:
-            pass
 
     if st.button("🔁 추징세액 계산하기", type="primary"):
         st.session_state.followup_table = edited.copy()
@@ -306,7 +288,7 @@ if summary is not None:
             "total_clawback": total_clawback,
         }
 
-# ── 재실행(예: 챗봇 입력) 이후에도 최근 결과를 계속 보여주기 ──
+# ── 재실행 이후에도 최근 결과 유지 ──
 if not trigger_calc:
     _prev = st.session_state.get("last_calc")
     if _prev is not None and _prev.get("schedule_records"):
@@ -319,12 +301,10 @@ if not trigger_calc:
 # ============================
 # 챗봇/컨텍스트
 # ============================
-# 안전 가드: total_clawback 기본값
 safe_total_clawback = (st.session_state.last_calc["total_clawback"]
     if (st.session_state.get("last_calc") and "total_clawback" in st.session_state.last_calc)
     else 0)
 
-# 챗봇 컨텍스트 저장 (공제 결과는 삭제하지 않음)
 st.session_state.calc_context = {
     "company_size": summary["company_size"] if summary else None,
     "region": summary["region"] if summary else None,
@@ -339,13 +319,12 @@ st.session_state.calc_context = {
 # ============================
 # 엑셀 생성 (요약 + 사후관리 결과표)
 # ============================
-
 def _build_excel():
-    """엑셀 내보내기: (1) 결과요약 시트 (복원), (2) 사후관리 결과표 시트."""
+    """엑셀 내보내기: (1) 결과요약 시트, (2) 사후관리 결과표 시트."""
     buffer = io.BytesIO()
     wb = Workbook()
 
-    # ---- 시트1: 결과요약 (복원) ----
+    # ---- 시트1: 결과요약 ----
     ws_sum = wb.active
     ws_sum.title = "결과요약"
 
@@ -374,8 +353,6 @@ def _build_excel():
 
     # 간단 서식
     bold = Font(bold=True)
-    for cell in ws_sum["A"][:1]:
-        cell.font = bold
     for cell in ws_sum[1]:
         cell.font = bold
     ws_sum.column_dimensions["A"].width = 28
@@ -388,7 +365,7 @@ def _build_excel():
     last_calc = st.session_state.get("last_calc")
     if last_calc and last_calc.get("schedule_records"):
         for row in last_calc["schedule_records"]:
-            ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"])
+            ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
 
     wb.save(buffer)
     return buffer.getvalue()
@@ -406,15 +383,12 @@ st.download_button(
 # ==============================
 # 💬 OpenAI 챗봇 (메인 화면 하단)
 # ==============================
-import os
 from dotenv import load_dotenv
 import importlib, chat_utils
 importlib.reload(chat_utils)
 from chat_utils import stream_chat
 
-# ==== 보존형 사후표 생성/정렬 유틸 ====
 def _build_chat_context() -> str:
-    """현재 입력값과 마지막 계산 결과를 요약해 챗봇에 제공."""
     ci = st.session_state.get("current_inputs")
     cc = st.session_state.get("calc_context")
     lines = []
@@ -428,14 +402,13 @@ def _build_chat_context() -> str:
     if cc:
         lines.append(f"[최근 계산 결과] 총공제액={cc.get('gross_credit'):,}원 / 적용공제액={cc.get('applied_credit'):,}원 / 유지기간={cc.get('retention_years')}년 / 추징합계={cc.get('total_clawback'):,}원")
     return "\n".join(lines) if lines else ""
-# .env 로드
+
 load_dotenv()
 
 st.divider()
 st.header("💬 OpenAI 챗봇")
 st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요. (모델: gpt-4o-mini)")
 
-# 🔐 API 키 입력/저장
 if "openai_api_key" not in st.session_state:
     st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
 
@@ -450,18 +423,15 @@ with st.expander("🔑 OpenAI API 키 설정", expanded=not bool(st.session_stat
             os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
             st.success("API 키가 설정되었습니다. 이제 챗봇을 사용할 수 있습니다.")
 
-# API 키가 없으면 챗봇 비활성화
 if not st.session_state.openai_api_key:
     st.warning("⛔ OpenAI API 키가 설정되어 있지 않습니다. 위 입력창에 키를 입력하세요.")
     st.stop()
 
-# 세션 상태 초기화
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "system_prompt" not in st.session_state:
     st.session_state.system_prompt = "You are a helpful assistant for Korean tax credit calculator users. Reply in Korean by default."
 
-# 챗봇 설정
 with st.expander("⚙️ 챗봇 설정", expanded=False):
     model = st.selectbox("모델 선택", ["gpt-4o-mini", "gpt-4o"], index=0)
     temperature = st.slider("온도(창의성)", 0.0, 1.0, 0.2, 0.1)
@@ -471,7 +441,6 @@ with st.expander("⚙️ 챗봇 설정", expanded=False):
     if apply_pref:
         st.session_state.system_prompt = sys_prompt
 
-# 대화 이력 표시
 for m in st.session_state.chat_history:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
@@ -487,7 +456,6 @@ with st.expander("🐞 디버그(이벤트 타입 확인)", expanded=False):
             preview.append({"role": role, "type": typ})
         st.write(preview if preview else "이력 없음")
 
-# 입력창
 user_text = st.chat_input("메시지를 입력하세요…")
 if user_text:
     st.session_state.chat_history.append({"role": "user", "content": user_text})
