@@ -1,78 +1,6 @@
+
 # -*- coding: utf-8 -*-
 import streamlit as st
-
-# ---------------------------------------------
-# 시뮬레이션 렌더 함수 (요약이 있으면 항상 표/결과 표시)
-def _render_simulation_pane(params, size, region, clawback_method):
-    import pandas as pd
-    st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-
-    # 요약이 없으면 안내
-    if "summary" not in st.session_state:
-        st.info("먼저 상단에서 **계산하기** 버튼을 눌러 계산 요약을 생성하세요.")
-        return
-
-    gross = int(st.session_state.summary["gross"])
-    applied = int(st.session_state.summary["applied"])
-    retention_years = int(st.session_state.summary["retention_years"])
-    curr_total = int(st.session_state.summary["curr_total"])
-    curr_youth = int(st.session_state.summary["curr_youth"])
-
-    years = [1, 2, 3]
-
-    # 편집 표를 세션에 보존
-    if "sim_df" not in st.session_state or st.session_state.sim_df is None:
-        st.session_state.sim_df = pd.DataFrame(
-            [{"연차": yr, "사후연도 상시": curr_total, "사후연도 청년등": curr_youth} for yr in years]
-        )
-
-    edited = st.data_editor(st.session_state.sim_df, num_rows="fixed", hide_index=True, key="sim_editor")
-    st.session_state.sim_df = edited  # 입력해도 사라지지 않도록 세션 반영
-
-    st.caption("연차별 인원을 입력한 뒤 아래 버튼을 눌러 추징세액을 계산하세요.")
-    if st.button("🔁 추징세액 계산하기", type="primary", key="btn_clawback"):
-        schedule = []
-        for _, row in st.session_state.sim_df.iterrows():
-            yidx = int(row["연차"])
-            fol_total = int(row["사후연도 상시"])
-            fol_youth = int(row["사후연도 청년등"]) if "사후연도 청년등" in row else 0
-
-            claw = calc_clawback(
-                credit_applied=applied,
-                base_headcount_at_credit=curr_total,
-                headcount_in_followup_year=fol_total,
-                retention_years_for_company=retention_years,
-                year_index_from_credit=yidx,
-                method=clawback_method,
-            )
-            schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
-
-        schedule_df = pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
-        st.dataframe(schedule_df, use_container_width=True)
-        total_clawback = int(schedule_df["추징세액"].sum())
-        st.metric("추징세액 합계", f"{total_clawback:,} 원")
-
-        # 결과도 세션에 보존 (rerun 유지)
-        st.session_state.last_calc = {
-            "gross": gross,
-            "applied": applied,
-            "retention_years": retention_years,
-            "company_size": size.value if hasattr(size, "value") else str(size),
-            "region": region.value if hasattr(region, "value") else str(region),
-            "clawback_method": clawback_method,
-            "base_headcount": curr_total,
-            "schedule_records": schedule_df.to_dict(orient="records"),
-            "total_clawback": total_clawback,
-        }
-    else:
-        # 이전 계산 결과가 있으면 계속 표시
-        if st.session_state.get("last_calc") and st.session_state.last_calc.get("schedule_records"):
-            _df = pd.DataFrame(st.session_state.last_calc["schedule_records"])
-            st.dataframe(_df, use_container_width=True)
-            tc = int(st.session_state.last_calc.get("total_clawback", _df["추징세액"].sum()))
-            st.metric("추징세액 합계", f"{tc:,} 원")
-# ---------------------------------------------
-
 import json
 import io
 import os
@@ -93,13 +21,21 @@ from employment_tax_credit_calc import (
 st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완.")
+st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완. (사후관리 입력/유지 버그 수정)")
 
-# 세션 상태
-if "saved_logo_png" not in st.session_state:
-    st.session_state.saved_logo_png = None
-if "saved_company_name" not in st.session_state:
-    st.session_state.saved_company_name = None
+# =====================
+# 세션 상태 기본 초기화
+# =====================
+def _ensure(key, default):
+    if key not in st.session_state:
+        st.session_state[key] = default
+    return st.session_state[key]
+
+_ensure("saved_logo_png", None)
+_ensure("saved_company_name", None)
+_ensure("followup_table", None)              # 사후관리 표 유지용
+_ensure("calc_summary", None)                # 계산하기 직후 공제요약 유지
+_ensure("last_calc", None)                   # 추징세액 계산하기 결과 유지
 
 with st.sidebar:
     st.header("1) 정책 파라미터")
@@ -159,7 +95,6 @@ with st.sidebar:
         params = load_params_from_json(tmp_path)
         os.remove(tmp_path)
         st.info("예시 파라미터를 사용 중입니다. (업로드 시 자동 대체)")
-    # (moved) 기업 정보 & 사후관리 옵션은 본문으로 이동했습니다.
 
 st.subheader("기업 정보 및 사후관리 옵션")
 colA, colB = st.columns(2)
@@ -177,7 +112,6 @@ with colB:
     selected_label = st.selectbox("추징 방식 선택", list(clawback_options.keys()), index=0, key="main_clawback_method")
     clawback_method = clawback_options[selected_label]
 
-
 st.header("고용 인원 입력")
 col1, col2, col3 = st.columns(3)
 
@@ -191,6 +125,10 @@ with col3:
     converted_regular = st.number_input("정규직 전환 인원 (해당연도)", min_value=0, value=2, step=1)
     returned_parental = st.number_input("육아휴직 복귀 인원 (해당연도)", min_value=0, value=1, step=1)
 
+# 최저한세용 세전세액
+st.header("세액 한도/최저한세 옵션")
+tax_before_credit = st.number_input("세전세액(최저한세 적용 시 필요)", min_value=0, value=120_000_000, step=1)
+
 # 현재 입력값을 세션에 저장(챗봇 컨텍스트용)
 st.session_state.current_inputs = {
     "company_size": size.value,
@@ -201,224 +139,275 @@ st.session_state.current_inputs = {
     "curr_youth": int(curr_youth),
     "converted_regular": int(converted_regular),
     "returned_parental": int(returned_parental),
-    "tax_before_credit": int(tax_before_credit) if "tax_before_credit" in locals() else None,
+    "tax_before_credit": int(tax_before_credit),
     "clawback_method": clawback_method,
 }
-
-st.header("세액 한도/최저한세 옵션")
-tax_before_credit = st.number_input("세전세액(최저한세 적용 시 필요)", min_value=0, value=120_000_000, step=1)
 
 st.divider()
 run = st.button("계산하기", type="primary", disabled=(params is None))
 
+# ============================
+# 계산하기: 공제액 산출 + 유지
+# ============================
 if run:
     if params is None:
         st.error("파라미터(JSON)를 먼저 불러오세요.")
-    else:
-        heads = HeadcountInputs(
-            prev_total=int(prev_total),
-            curr_total=int(curr_total),
-            prev_youth=int(prev_youth),
-            curr_youth=int(curr_youth),
-            converted_regular=int(converted_regular),
-            returned_from_parental_leave=int(returned_parental),
-        )
-        gross = calc_gross_credit(size, region, heads, params)
-        applied = apply_caps_and_min_tax(gross, params, tax_before_credit=int(tax_before_credit) if tax_before_credit else None)
-        retention_years = params.retention_years[size]
+        st.stop()
 
-        st.subheader("① 공제액 계산 결과")
-        st.metric("총공제액 (최저한세/한도 전)", f"{gross:,} 원")
-        st.metric("적용 공제액 (최저한세/한도 후)", f"{applied:,} 원")
-        st.write(f"유지기간(사후관리 대상): **{retention_years}년**")
-        # 요약 저장 (rerun에도 유지)
-        st.session_state.summary = {
-            "gross": int(gross),
-            "applied": int(applied),
-            "retention_years": int(retention_years),
-            "curr_total": int(curr_total),
-            "curr_youth": int(curr_youth),
+    heads = HeadcountInputs(
+        prev_total=int(prev_total),
+        curr_total=int(curr_total),
+        prev_youth=int(prev_youth),
+        curr_youth=int(curr_youth),
+        converted_regular=int(converted_regular),
+        returned_from_parental_leave=int(returned_parental),
+    )
+    gross = calc_gross_credit(size, region, heads, params)
+    applied = apply_caps_and_min_tax(gross, params, tax_before_credit=int(tax_before_credit) if tax_before_credit else None)
+    retention_years = params.retention_years[size]
+
+    # 공제 요약을 세션에 보존 (편집 중 rerun에도 유지)
+    st.session_state.calc_summary = {
+        "gross": int(gross),
+        "applied": int(applied),
+        "retention_years": int(retention_years),
+        "company_size": size.value,
+        "region": region.value,
+        "base_headcount": int(curr_total),
+        "clawback_method": clawback_method,
+    }
+
+    # 사후관리 기본표 초기화(최초 한 번만) — 사용자가 값 입력 후에는 덮어쓰지 않음
+    # 보존형 초기화/정렬: 기존 값은 유지, 부족한 연차만 기본값으로 채움
+    ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
+
+# ============================
+# 공제 요약 표시 (유지)
+# ============================
+summary = st.session_state.calc_summary
+if summary is not None:
+
+# 유지기간이 바뀌는 경우에도 기존 값 보존하면서 연차만 맞춰줌
+try:
+    ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
+except Exception:
+    pass
+    st.subheader("① 공제액 계산 결과")
+    st.metric("총공제액 (최저한세/한도 전)", f"{summary['gross']:,} 원")
+    st.metric("적용 공제액 (최저한세/한도 후)", f"{summary['applied']:,} 원")
+    st.write(f"유지기간(사후관리 대상): **{summary['retention_years']}년**")
+
+    # ============================
+    # 사후관리(추징) 시뮬레이션 입력표
+    # ============================
+    st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
+    st.caption("연차별로 '사후연도 상시'와 '사후연도 청년등'을 직접 입력 후, 아래 버튼을 눌러 추징세액을 계산하세요.")
+    # 사용자가 입력한 값을 유지하기 위해 세션의 표를 항상 원본으로 사용
+    edited = st.data_editor(
+        st.session_state.followup_table.copy() if st.session_state.followup_table is not None else pd.DataFrame(),
+        num_rows="fixed",
+        hide_index=True,
+        key="followup_editor",
+    )
+    # 사용자가 편집하면 즉시 세션 상태로 반영 (기본값으로 돌아가는 문제 방지)
+    st.session_state.followup_table = edited.copy()
+
+    # 별도의 계산 버튼 (공제결과는 유지)
+    if st.button("🔁 추징세액 계산하기", type="primary"):
+        schedule_records = []
+        for _, row in edited.iterrows():
+            yidx = int(row["연차"])
+            fol_total = int(row["사후연도 상시"])
+            fol_youth = int(row.get("사후연도 청년등", 0))
+
+            claw = calc_clawback(
+                credit_applied=int(summary["applied"]),
+                base_headcount_at_credit=int(summary["base_headcount"]),
+                headcount_in_followup_year=fol_total,
+                retention_years_for_company=int(summary["retention_years"]),
+                year_index_from_credit=yidx,
+                method=summary["clawback_method"],
+            )
+            schedule_records.append({
+                "연차": yidx,
+                "사후연도 상시": fol_total,
+                "사후연도 청년등": fol_youth,
+                "추징세액": int(claw),
+            })
+        schedule_df = pd.DataFrame(schedule_records).sort_values("연차").reset_index(drop=True)
+        total_clawback = int(schedule_df["추징세액"].sum()) if not schedule_df.empty else 0
+
+        # 결과 표시
+        st.dataframe(schedule_df, use_container_width=True)
+        st.metric("추징세액 합계", f"{total_clawback:,} 원")
+
+        # rerun에도 유지되도록 저장
+        st.session_state.last_calc = {
+            **summary,
+            "schedule_records": schedule_df.to_dict(orient="records"),
+            "total_clawback": total_clawback,
         }
 
+# ============================
+# 챗봇/컨텍스트
+# ============================
+# 안전 가드: total_clawback 기본값
+safe_total_clawback = st.session_state.last_calc["total_clawback"] if (st.session_state.last_calc and "total_clawback" in st.session_state.last_calc) else 0
 
-        # 메트릭 요약을 세션에 저장해 rerun에도 유지
-        st.session_state.summary = {
-            "gross": int(gross),
-            "applied": int(applied),
-            "retention_years": int(retention_years),
-            "curr_total": int(curr_total),
-            "curr_youth": int(curr_youth),
-        }
-        # 시뮬레이션 섹션 노출 플래그
-        st.session_state.show_sim = True
+# 챗봇 컨텍스트 저장 (공제 결과는 삭제하지 않음)
+st.session_state.calc_context = {
+    "company_size": summary["company_size"] if summary else None,
+    "region": summary["region"] if summary else None,
+    "retention_years": summary["retention_years"] if summary else None,
+    "clawback_method": summary["clawback_method"] if summary else None,
+    "inputs": st.session_state.get("current_inputs", {}),
+    "gross_credit": summary["gross"] if summary else None,
+    "applied_credit": summary["applied"] if summary else None,
+    "total_clawback": safe_total_clawback,
+}
 
+# ============================
+# 엑셀 생성 (가능할 때만)
+# ============================
 
-        # 다년 추징표
-        
-        
-        _render_simulation_pane(params, size, region, clawback_method)
+def _build_excel():
+    buffer = io.BytesIO()
+    wb = Workbook()
+    ws = wb.active; ws.title = "요약"
 
-        # 챗봇 컨텍스트로 저장
-        st.session_state.calc_context = {
-    
-            "company_size": size.value,
-            "region": region.value,
-            "retention_years": int(retention_years),
-            "clawback_method": clawback_method,
-            "inputs": st.session_state.get("current_inputs", {}),
-            "gross_credit": int(gross),
-            "applied_credit": int(applied),
-            "total_clawback": int(total_clawback),
-        }
+    # 스타일
+    title_font = Font(name="맑은 고딕", size=14, bold=True)
+    header_fill = PatternFill("solid", fgColor="F2F2F2")
+    thin = Side(style="thin", color="CCCCCC")
+    border_all = Border(top=thin, bottom=thin, left=thin, right=thin)
+    center = Alignment(horizontal="center", vertical="center")
+    right = Alignment(horizontal="right", vertical="center")
 
-        # 엑셀 생성
-        buffer = io.BytesIO()
-        wb = Workbook()
-        ws = wb.active; ws.title = "Summary"
+    # NamedStyle 등록
+    currency_style = NamedStyle(name="KRW")
+    currency_style.number_format = '#,##0"원"'
+    currency_style.alignment = right
+    try:
+        wb.add_named_style(currency_style)
+    except Exception:
+        pass
 
-        # 스타일
-        title_font = Font(name="맑은 고딕", size=14, bold=True)
-        header_fill = PatternFill("solid", fgColor="F2F2F2")
-        thin = Side(style="thin", color="CCCCCC")
-        border_all = Border(top=thin, bottom=thin, left=thin, right=thin)
-        center = Alignment(horizontal="center", vertical="center")
-        right = Alignment(horizontal="right", vertical="center")
-
-        # NamedStyle 등록 (버전 호환: 이미 있으면 예외로 무시)
-        currency_style = NamedStyle(name="KRW")
-        currency_style.number_format = '#,##0"원"'
-        currency_style.alignment = right
+    # 로고 (메모리)
+    row_cursor = 1
+    if st.session_state.saved_logo_png is not None:
         try:
-            wb.add_named_style(currency_style)
-        except Exception:
-            pass
+            pil_img = PILImage.open(io.BytesIO(st.session_state.saved_logo_png))
+            img = XLImage(pil_img)
+            img.width = 140; img.height = 40
+            ws.add_image(img, "A1"); row_cursor = 4
+        except Exception as e:
+            st.warning(f"로고 삽입 중 오류: {e}")
 
-        # 로고 (메모리)
-        row_cursor = 1
-        if st.session_state.saved_logo_png is not None:
-            try:
-                pil_img = PILImage.open(io.BytesIO(st.session_state.saved_logo_png))
-                img = XLImage(pil_img)
-                img.width = 140; img.height = 40
-                ws.add_image(img, "A1"); row_cursor = 4
-            except Exception as e:
-                st.warning(f"로고 삽입 중 오류: {e}")
+    title_cell = ws.cell(row=row_cursor, column=1, value="통합고용세액공제 계산 결과")
+    title_cell.font = title_font
+    ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=6)
+    ws.cell(row=row_cursor, column=7, value=f"작성일자: {datetime.now().strftime('%Y-%m-%d')}").alignment = right
+    ws.cell(row=row_cursor+1, column=1, value=f"기관명: {st.session_state.saved_company_name or '(기관명)'}")
 
-        title_cell = ws.cell(row=row_cursor, column=1, value="통합고용세액공제 계산 결과")
-        title_cell.font = title_font
-        ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=6)
-        ws.cell(row=row_cursor, column=7, value=f"작성일자: {datetime.now().strftime('%Y-%m-%d')}").alignment = right
-        ws.cell(row=row_cursor+1, column=1, value=f"기관명: {st.session_state.saved_company_name or '(기관명)'}")
-        ws.cell(row=row_cursor+1, column=4, value=f"기업규모/지역: {size.value}/{region.value}")
+    summary = st.session_state.get("calc_summary")
+    if summary:
+        ws.cell(row=row_cursor+1, column=4, value=f"기업규모/지역: {summary['company_size']}/{summary['region']}")
 
-        start = row_cursor + 3
-        data = [
-            ["항목", "값"],
-            ["총공제액 (최저한세/한도 전)", int(gross)],
-            ["적용 공제액 (최저한세/한도 후)", int(applied)],
-            ["유지기간(년)", int(retention_years)],
-            ["추징방식", clawback_method],
-            ["추징세액 합계", total_clawback],
-        ]
-        for r_idx, row in enumerate(data, start=start):
-            for c_idx, val in enumerate(row, start=1):
-                ws.cell(row=r_idx, column=c_idx, value=val)
+    start = row_cursor + 3
+    data = [["항목", "값"]]
+    if summary:
+        data.extend([
+            ["총공제액 (최저한세/한도 전)", int(summary["gross"])],
+            ["적용 공제액 (최저한세/한도 후)", int(summary["applied"])],
+            ["유지기간(년)", int(summary["retention_years"])],
+            ["추징방식", summary["clawback_method"]],
+        ])
+    last_calc = st.session_state.get("last_calc")
+    if last_calc is not None:
+        data.append(["추징세액 합계", int(last_calc.get("total_clawback", 0))])
 
+    # 요약 채우기
+    for r_idx, row in enumerate(data, start=start):
+        for c_idx, val in enumerate(row, start=1):
+            ws.cell(row=r_idx, column=c_idx, value=val)
+
+    if summary:
         ws.cell(row=start+1, column=2).style = "KRW"
         ws.cell(row=start+2, column=2).style = "KRW"
+    if last_calc is not None:
         ws.cell(row=start+4, column=2).style = "KRW"
 
-        for r in ws.iter_rows(min_row=start, max_row=start+len(data)-1, min_col=1, max_col=2):
-            for cell in r:
-                cell.border = border_all
-                if cell.row == start:
-                    cell.fill = header_fill; cell.alignment = center
-                elif cell.column == 1:
-                    cell.alignment = center
-                else:
-                    if cell.style != "KRW":
-                        cell.alignment = right
+    for r in ws.iter_rows(min_row=start, max_row=start+len(data)-1, min_col=1, max_col=2):
+        for cell in r:
+            cell.border = border_all
+            if cell.row == start:
+                cell.fill = header_fill; cell.alignment = center
+            elif cell.column == 1:
+                cell.alignment = center
+            else:
+                if cell.style != "KRW":
+                    cell.alignment = right
 
-        # 다년 추징표 시트
-        ws2 = wb.create_sheet("Clawback Schedule")
-        headers = ["연차", "사후연도 인원", "추징세액"]
-        ws2.append(headers)
-        for row in schedule:
-            ws2.append([row["연차"], row["사후연도 인원"], row["추징세액"]])
+    # ▶ 사후관리 입력표 시트
+    ws_in = wb.create_sheet("사후관리 입력표")
+    headers_in = ["연차", "사후연도 상시", "사후연도 청년등"]
+    ws_in.append(headers_in)
+    fup = st.session_state.get("followup_table")
+    if fup is not None and not fup.empty:
+        for _, r in fup.iterrows():
+            ws_in.append([int(r["연차"]), int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))])
 
-        for cell in ws2[1]:
+    for cell in ws_in[1]:
+        cell.fill = header_fill; cell.border = border_all; cell.alignment = center; cell.font = Font(bold=True)
+    for r in range(2, ws_in.max_row+1):
+        ws_in.cell(row=r, column=1).alignment = center
+        for c in [2,3]:
+            ws_in.cell(row=r, column=c).alignment = right
+        for c in [1,2,3]:
+            ws_in.cell(row=r, column=c).border = border_all
+    for col, w in zip(["A","B","C"], [10, 18, 18]):
+        ws_in.column_dimensions[col].width = w
+
+    # ▶ 사후관리 결과표 시트(계산한 경우만)
+    if last_calc is not None:
+        ws_res = wb.create_sheet("사후관리 결과표")
+        headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
+        ws_res.append(headers)
+        for row in last_calc["schedule_records"]:
+            ws_res.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
+
+        for cell in ws_res[1]:
             cell.fill = header_fill; cell.border = border_all; cell.alignment = center; cell.font = Font(bold=True)
+        for r in range(2, 2 + len(last_calc["schedule_records"])):
+            ws_res.cell(row=r, column=1).alignment = center
+            ws_res.cell(row=r, column=2).alignment = right
+            ws_res.cell(row=r, column=3).alignment = right
+            ws_res.cell(row=r, column=4).style = "KRW"
+            for c in range(1, 5):
+                ws_res.cell(row=r, column=c).border = border_all
+        for col, w in zip(["A","B","C","D"], [10, 18, 18, 18]):
+            ws_res.column_dimensions[col].width = w
 
-        for r in range(2, 2 + len(schedule)):
-            ws2.cell(row=r, column=1).alignment = center
-            ws2.cell(row=r, column=2).alignment = right
-            ws2.cell(row=r, column=3).style = "KRW"
-            for c in range(1, 4):
-                ws2.cell(row=r, column=c).border = border_all
+    # 컬럼 폭/헤더
+    ws.column_dimensions["A"].width = 22; ws.column_dimensions["B"].width = 26
+    try:
+        ws.header_footer.left_header = f"&L{st.session_state.saved_company_name or '(기관명)'}"
+        ws.header_footer.right_header = "&R통합고용세액공제 계산 결과"
+    except Exception:
+        pass
 
-        ws.column_dimensions["A"].width = 22; ws.column_dimensions["B"].width = 26
-        for col, w in zip(["A","B","C"], [10, 18, 18]):
-            ws2.column_dimensions[col].width = w
+    wb.save(buffer)
+    return buffer.getvalue()
 
-        try:
-            ws.header_footer.left_header = f"&L{st.session_state.saved_company_name or '(기관명)'}"
-            ws.header_footer.right_header = "&R통합고용세액공제 계산 결과"
-            ws2.header_footer.left_header = f"&L{st.session_state.saved_company_name or '(기관명)'}"
-            ws2.header_footer.right_header = "&RClawback Schedule"
-        except Exception:
-            pass
-
-        ws3 = wb.create_sheet("Parameters")
-        ws3.cell(row=1, column=1, value="Parameters (JSON)")
-        ws3.cell(row=2, column=1, value=json.dumps({
-            "per_head_basic": {k.value: {kk.value: v for kk, v in d.items()} for k, d in params.per_head_basic.items()},
-            "per_head_youth": {k.value: {kk.value: v for kk, v in d.items()} for k, d in params.per_head_youth.items()},
-            "per_head_conversion": params.per_head_conversion,
-            "per_head_return_from_parental": params.per_head_return_from_parental,
-            "retention_years": {k.value: v for k, v in params.retention_years.items()},
-            "max_credit_total": params.max_credit_total,
-            "min_tax_limit_rate": params.min_tax_limit_rate,
-            "excluded_industries": params.excluded_industries,
-        }, ensure_ascii=False, indent=2))
-
-        wb.save(buffer)
-        excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        st.download_button(
-            label="엑셀 다운로드 (.xlsx, Pro 포맷)",
-            file_name=excel_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            data=buffer.getvalue()
-        )
-
-else:
-    # rerun으로 버튼 상태가 꺼져도 최근 계산값이 있으면 동일 UI로 다시 표시
-    if st.session_state.get("last_calc"):
-        _lc = st.session_state["last_calc"]
-        st.subheader("① 공제액 계산 결과")
-        st.metric("총공제액 (최저한세/한도 전)", f"{_lc['gross']:,} 원")
-        st.metric("적용 공제액 (최저한세/한도 후)", f"{_lc['applied']:,} 원")
-        st.write(f"유지기간(사후관리 대상): **{_lc['retention_years']}년**")
-
-        st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-        import pandas as _pd
-        _schedule_df = _pd.DataFrame(_lc["schedule_records"])
-        st.dataframe(_schedule_df, use_container_width=True)
-        total_clawback = int(_schedule_df["추징세액"].sum())
-        st.metric("추징세액 합계", f"{total_clawback:,} 원")
-    else:
-        if st.session_state.get("summary"):  # 요약이 있으면 언제든 시뮬레이션 표시
-            _render_simulation_pane(params, size, region, clawback_method)
-        elif st.session_state.get("show_sim") and st.session_state.get("last_calc"): 
-            st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-            import pandas as _pd
-            _df = _pd.DataFrame(st.session_state.last_calc.get("schedule_records", []))
-            if not _df.empty:
-                st.dataframe(_df, use_container_width=True)
-                tc = int(st.session_state.last_calc.get("total_clawback", _df["추징세액"].sum()))
-                st.metric("추징세액 합계", f"{tc:,} 원")
-        else:
-            st.info("좌측에서 파라미터(JSON)를 불러오고, 인원을 입력한 뒤 **계산하기**를 눌러주세요.")
-
+# 다운로드 버튼 (요약만 있어도 활성화)
+excel_bytes = _build_excel()
+excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+st.download_button(
+    label="엑셀 다운로드 (.xlsx, Pro 포맷)",
+    file_name=excel_name,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    data=excel_bytes,
+)
 
 # ==============================
 # 💬 OpenAI 챗봇 (메인 화면 하단)
@@ -427,75 +416,46 @@ import os
 from dotenv import load_dotenv
 import importlib, chat_utils
 importlib.reload(chat_utils)
+from chat_utils import stream_chat
 
-def _render_simulation_pane(params, size, region, clawback_method):
-    """요약(gross/applied/years)이 있으면 언제든 시뮬레이션 표/결과를 렌더링."""
+# ==== 보존형 사후표 생성/정렬 유틸 ====
+def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
+    """
+    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 절대 덮어쓰지 않는다.
+    필요 시 새 연차만 기본값으로 추가하고, 남는 연차는 제거한다.
+    """
     import pandas as _pd
-    st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
 
-    if "summary" not in st.session_state:
-        st.info("먼저 상단에서 **계산하기**를 눌러 요약을 생성하세요.")
+    # 현재 표
+    cur = st.session_state.get("followup_table")
+    # 목표 인덱스
+    target_years = list(range(1, int(retention_years) + 1))
+
+    if cur is None or cur.empty:
+        st.session_state.followup_table = _pd.DataFrame(
+            [{"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)} for y in target_years]
+        )
         return
 
-    gross = st.session_state.summary["gross"]
-    applied = st.session_state.summary["applied"]
-    retention_years = st.session_state.summary["retention_years"]
-    curr_total = st.session_state.summary["curr_total"]
-    curr_youth = st.session_state.summary["curr_youth"]
+    # 사본으로 작업
+    cur = cur.copy()
+    # dtype 정리
+    for col in ["연차", "사후연도 상시", "사후연도 청년등"]:
+        if col in cur.columns:
+            cur[col] = _pd.to_numeric(cur[col], errors="coerce").fillna(0).astype(int)
 
-    years = [1, 2, 3]
+    # 현재 연차 -> 값 맵
+    map_exist = {int(r["연차"]): (int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))) for _, r in cur.iterrows()}
 
-    # 세션에 편집용 DF가 없으면 생성, 있으면 그대로 사용
-    if "sim_df" not in st.session_state or st.session_state.get("sim_df") is None:
-        st.session_state.sim_df = _pd.DataFrame(
-            [{"연차": yr, "사후연도 상시": int(curr_total), "사후연도 청년등": int(curr_youth)} for yr in years]
-        )
+    rows = []
+    for y in target_years:
+        if y in map_exist:
+            tot, yth = map_exist[y]
+            rows.append({"연차": y, "사후연도 상시": tot, "사후연도 청년등": yth})
+        else:
+            rows.append({"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)})
 
-    edited = st.data_editor(st.session_state.sim_df, num_rows="fixed", hide_index=True, key="sim_editor_global")
-    st.session_state.sim_df = edited  # 편집 내용 유지
-
-    st.caption("연차별 인원을 입력한 후 아래 버튼을 눌러 추징세액을 계산하세요.")
-    if st.button("🔁 추징세액 계산하기", type="primary", key="btn_compute_clawback_global"):
-        schedule = []
-        for _, row in st.session_state.sim_df.iterrows():
-            yidx = int(row["연차"])
-            fol_total = int(row["사후연도 상시"])
-            fol_youth = int(row.get("사후연도 청년등", 0))
-
-            claw = calc_clawback(
-                credit_applied=int(applied),
-                base_headcount_at_credit=int(curr_total),
-                headcount_in_followup_year=fol_total,
-                retention_years_for_company=int(retention_years),
-                year_index_from_credit=yidx,
-                method=clawback_method,
-            )
-            schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
-        schedule_df = _pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
-        st.dataframe(schedule_df, use_container_width=True)
-        total_clawback = int(schedule_df["추징세액"].sum())
-        st.metric("추징세액 합계", f"{total_clawback:,} 원")
-
-        # 결과를 세션에 저장
-        st.session_state.last_calc = {
-            "gross": int(gross),
-            "applied": int(applied),
-            "retention_years": int(retention_years),
-            "company_size": size.value if hasattr(size,"value") else str(size),
-            "region": region.value if hasattr(region,"value") else str(region),
-            "clawback_method": clawback_method,
-            "base_headcount": int(curr_total),
-            "schedule_records": schedule_df.to_dict(orient="records"),
-            "total_clawback": int(total_clawback),
-        }
-    else:
-        # 이전 결과가 있으면 계속 표시
-        if st.session_state.get("last_calc") and st.session_state.last_calc.get("schedule_records"):
-            _df = _pd.DataFrame(st.session_state.last_calc["schedule_records"])
-            st.dataframe(_df, use_container_width=True)
-            tc = int(st.session_state.last_calc.get("total_clawback", _df["추징세액"].sum()))
-            st.metric("추징세액 합계", f"{tc:,} 원")
-from chat_utils import stream_chat
+    st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
 
 
 def _build_chat_context() -> str:
@@ -563,7 +523,6 @@ for m in st.session_state.chat_history:
 
 with st.expander("🐞 디버그(이벤트 타입 확인)", expanded=False):
     if st.button("이벤트 타입 미리보기"):
-        # 미리보기용으로 events를 구성해 보여줍니다.
         preview = []
         if st.session_state.get("system_prompt"):
             preview.append({"role":"system","type":"input_text"})
