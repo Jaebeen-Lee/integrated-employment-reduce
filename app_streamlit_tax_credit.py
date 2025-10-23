@@ -530,7 +530,6 @@ if show_chat:
     st.header("💬 OpenAI 챗봇")
     
     st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요.")
-    st.caption("(ex 세액공제액을 1000만원 이상 받으려면 상시근로자를 몇 명 더 고용해야 하나요?)"
                
     if "openai_api_key" not in st.session_state:
         st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
