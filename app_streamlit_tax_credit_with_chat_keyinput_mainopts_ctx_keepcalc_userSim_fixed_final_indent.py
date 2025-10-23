@@ -179,7 +179,7 @@ if run:
 
     # 사후관리 기본표 초기화(최초 한 번만) — 사용자가 값 입력 후에는 덮어쓰지 않음
     # 보존형 초기화/정렬: 기존 값은 유지, 부족한 연차만 기본값으로 채움
-    ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
+        ensure_followup_table(retention_years, int(curr_total), int(curr_youth))
 
 # ============================
 # 공제 요약 표시 (유지)
@@ -187,11 +187,11 @@ if run:
 summary = st.session_state.calc_summary
 if summary is not None:
 
-# 유지기간이 바뀌는 경우에도 기존 값 보존하면서 연차만 맞춰줌
-try:
-    ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
-except Exception:
-    pass
+    # 유지기간이 바뀌는 경우에도 기존 값 보존하면서 연차만 맞춰줌
+    try:
+        ensure_followup_table(int(summary["retention_years"]), int(summary["base_headcount"]), int(st.session_state.current_inputs.get("curr_youth", 0)))
+    except Exception:
+        pass
     st.subheader("① 공제액 계산 결과")
     st.metric("총공제액 (최저한세/한도 전)", f"{summary['gross']:,} 원")
     st.metric("적용 공제액 (최저한세/한도 후)", f"{summary['applied']:,} 원")
