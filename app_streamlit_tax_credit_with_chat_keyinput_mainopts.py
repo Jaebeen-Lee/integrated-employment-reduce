@@ -17,10 +17,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기", layout="wide")
 
-st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완.")
+st.title("통합고용세액공제 계산기")
+st.caption("조특법 §29조의8에 따른 통합고용세액공제를 계산합니다.")
 
 # 세션 상태
 if "saved_logo_png" not in st.session_state:
@@ -29,9 +29,9 @@ if "saved_company_name" not in st.session_state:
     st.session_state.saved_company_name = None
 
 with st.sidebar:
-    st.header("1) 정책 파라미터")
-    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
-    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
+    st.header("1) 최근 시행령 적용")
+    uploaded = st.file_uploader("최근 시행령을 반영한 JSON 업로드", type=["json"], accept_multiple_files=False)
+    default_info = st.toggle("예시 파라미터 사용", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
