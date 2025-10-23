@@ -43,10 +43,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
 # Force scroll to top on load
 _inject_force_top()
-", layout="wide")
+
 
 # =====================
 # 상단 스크롤 고정 (강제)
