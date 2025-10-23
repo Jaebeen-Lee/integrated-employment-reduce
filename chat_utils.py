@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-\"\"\"OpenAI Responses API helper for Streamlit chat (streaming).\"\"\"
+"""OpenAI Responses API helper for Streamlit chat (streaming)."""
 import os
 from typing import Iterable, List, Dict, Optional
 from openai import OpenAI
@@ -14,9 +14,9 @@ def _ctype_for_role(role: str) -> str:
     return "output_text" if r in ("assistant", "model") else "input_text"
 
 def stream_chat(messages: List[Dict[str, str]], system_prompt: Optional[str] = None, model: str = "gpt-4o-mini") -> Iterable[str]:
-    \"\"\"Yield assistant text tokens using Responses API streaming.
-    `messages` is a list like: [{\"role\": \"user\"|\"assistant\", \"content\": \"...\"}, ...]
-    \"\"\"
+    """Yield assistant text tokens using Responses API streaming.
+    `messages` is a list like: [{"role": "user"|"assistant", "content": "..."}, ...]
+    """
     client = _client()
 
     events = []
