@@ -166,40 +166,39 @@ with st.sidebar:
     st.header("1) 정책 파라미터")
     uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
     
-    
-    # 예시 파라미터(JSON) 다운로드 버튼
+    # 빈 템플릿(JSON) 다운로드 버튼
     try:
-        _example_cfg = {
+        _blank_template = {
             "per_head_basic": {
-                "중소기업": {"수도권": 1200000, "지방": 1300000},
-                "중견기업": {"수도권": 900000, "지방": 1000000},
-                "대기업":   {"수도권": 600000, "지방": 700000}
+                "중소기업": {"수도권": 0, "지방": 0},
+                "중견기업": {"수도권": 0, "지방": 0},
+                "대기업":   {"수도권": 0, "지방": 0}
             },
             "per_head_youth": {
-                "중소기업": {"수도권": 1500000, "지방": 1600000},
-                "중견기업": {"수도권": 1100000, "지방": 1200000},
-                "대기업":   {"수도권": 800000,  "지방": 900000}
+                "중소기업": {"수도권": 0, "지방": 0},
+                "중견기업": {"수도권": 0, "지방": 0},
+                "대기업":   {"수도권": 0, "지방": 0}
             },
-            "per_head_conversion": 800000,
-            "per_head_return_from_parental": 800000,
+            "per_head_conversion": 0,
+            "per_head_return_from_parental": 0,
             "retention_years": {"중소기업": 3, "중견기업": 3, "대기업": 2},
             "max_credit_total": None,
             "min_tax_limit_rate": 0.07,
-            "excluded_industries": ["유흥주점업", "기타소비성서비스업"]
+            "excluded_industries": []
         }
-        _example_bytes = json.dumps(_example_cfg, ensure_ascii=False, indent=2).encode("utf-8")
+        _blank_bytes = json.dumps(_blank_template, ensure_ascii=False, indent=2).encode("utf-8")
         st.download_button(
-            label="예시 파라미터(JSON) 다운로드",
-            data=_example_bytes,
-            file_name="params_example_latest.json",
+            label="빈 템플릿(JSON) 다운로드",
+            data=_blank_bytes,
+            file_name="params_template_blank.json",
             mime="application/json",
-            help="최근 법령 기준으로 작성된 예시 파라미터입니다. 내려받아 수정 후 업로드하세요."
+            help="필드 구조만 포함된 템플릿입니다. 값을 채워 업로드하세요."
         )
     except Exception as _e:
-        st.caption(f"예시 파일 생성 오류: {_e}")
-default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
+        st.caption(f"템플릿 생성 오류: {_e}")
+    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
 
-st.header("2) 보고서 옵션")
+    st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
     logo_file = st.file_uploader("회사 로고 (PNG 권장)", type=["png"], accept_multiple_files=False)
     remember_logo = st.checkbox("이 로고/기관명을 계속 사용(앱 캐시에 저장)", value=True)
