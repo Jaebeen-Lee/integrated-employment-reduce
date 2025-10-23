@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+﻿﻿# -*- coding: utf-8 -*-
 
 # === Force scroll to top on initial load only ===
 import streamlit.components.v1 as _components
@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage
 
@@ -479,6 +479,24 @@ def _build_excel():
     if last_calc and last_calc.get("schedule_records"):
         for row in last_calc["schedule_records"]:
             ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
+
+    # === [변경] 첫 3칸(각 열) 연한 노랑색 강조 ===
+    try:
+        yellow_fill = PatternFill(start_color="FFFCE8A1", end_color="FFFCE8A1", fill_type="solid")
+        # 헤더(1행)에서 대상 열의 인덱스 찾기
+        header_map = {cell.value: cell.column for cell in ws[1]}
+        col_total = header_map.get("사후연도 상시")
+        col_youth = header_map.get("사후연도 청년등")
+        # 데이터 시작은 2행, 최대 3행까지(즉, 2~4행)
+        top_rows_end = min(4, ws.max_row)
+        for r in range(2, top_rows_end + 1):
+            if col_total:
+                ws.cell(row=r, column=col_total).fill = yellow_fill
+            if col_youth:
+                ws.cell(row=r, column=col_youth).fill = yellow_fill
+    except Exception as _style_err:
+        # 스타일 적용 실패 시에도 동작은 계속되도록 무시
+        pass
 
     try:
         wb.save(buffer)
