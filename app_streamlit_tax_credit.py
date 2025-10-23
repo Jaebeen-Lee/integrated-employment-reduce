@@ -42,8 +42,8 @@ st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고�
 _inject_force_top_once()
 
 
-st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
+st.title("통합고용증대 세액공제 계산기")
+st.caption("조특법 §29조의8에 따른 통합고용증대 세액공제를 계산합니다")
 
 # =====================
 # 로컬 캐시 유틸
@@ -137,8 +137,8 @@ def ensure_followup_table(retention_years:int, default_total:int, default_youth:
     st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
 
 with st.sidebar:
-    st.header("1) 정책 파라미터")
-    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
+    st.header("1) 최근 시행령 적용")
+    uploaded = st.file_uploader("최근 시행령 JSON 업로드", type=["json"], accept_multiple_files=False)
     
     # 빈 템플릿(JSON) 다운로드 버튼
     try:
@@ -162,7 +162,7 @@ with st.sidebar:
         }
         _blank_bytes = json.dumps(_blank_template, ensure_ascii=False, indent=2).encode("utf-8")
         st.download_button(
-            label="빈 템플릿(JSON) 다운로드",
+            label="빈서식(JSON) 다운로드",
             data=_blank_bytes,
             file_name="params_template_blank.json",
             mime="application/json",
@@ -170,12 +170,12 @@ with st.sidebar:
         )
     except Exception as _e:
         st.caption(f"템플릿 생성 오류: {_e}")
-    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
+    default_info = st.toggle("개발시 시행령값(미업로드시)", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
     logo_file = st.file_uploader("회사 로고 (PNG 권장)", type=["png"], accept_multiple_files=False)
-    remember_logo = st.checkbox("이 로고/기관명을 계속 사용(앱 캐시에 저장)", value=True)
+    remember_logo = st.checkbox("이 로고/기관명을 계속 사용", value=True)
 
     logo_bytes = None
     if logo_file is not None:
@@ -227,7 +227,7 @@ with st.sidebar:
             json.dump(demo_cfg, f, ensure_ascii=False)
         params = load_params_from_json(tmp_path)
         os.remove(tmp_path)
-        st.info("예시 파라미터를 사용 중입니다. (업로드 시 자동 대체)")
+       
 
 st.subheader("기업 정보 및 사후관리 옵션")
 colA, colB = st.columns(2)
