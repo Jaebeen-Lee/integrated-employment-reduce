@@ -18,10 +18,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고삽입 안정화)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고 워터마크)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("엑셀 결과요약 시트 상단 로고 삽입을 임시파일 방식으로 안정화 + 기존 오류 수정")
+st.caption("엑셀 결과요약 시트 상단 로고를 아주 연한 워터마크로 삽입 + 임시파일 방식 안정화")
 
 # =====================
 # 세션 상태 기본 초기화
@@ -294,10 +294,10 @@ st.session_state.calc_context = {
 }
 
 # ============================
-# 엑셀 생성 (요약 + 사후관리 결과표) + 상단 로고 삽입 (임시파일 방식)
+# 엑셀 생성 (요약 + 사후관리 결과표) + 상단 로고 워터마크 삽입 (임시파일 방식)
 # ============================
 def _build_excel():
-    """엑셀 내보내기: (1) 결과요약 시트(상단 로고 포함), (2) 사후관리 결과표 시트."""
+    """엑셀 내보내기: (1) 결과요약 시트(상단 로고 워터마크 포함), (2) 사후관리 결과표 시트."""
     buffer = io.BytesIO()
     wb = Workbook()
     tmp_logo_path = None
@@ -306,21 +306,27 @@ def _build_excel():
     ws_sum = wb.active
     ws_sum.title = "결과요약"
 
-    # 로고 삽입: 임시파일에 저장 후 openpyxl로 로드
+    # 로고 워터마크 삽입: 임시파일에 저장 후 openpyxl로 로드 (A1 위치 그대로)
     start_row = 1
     logo_bytes = st.session_state.get("saved_logo_png")
     if logo_bytes:
         try:
-            pil_img = PILImage.open(io.BytesIO(logo_bytes))
-            if pil_img.mode not in ("RGB", "RGBA"):
-                pil_img = pil_img.convert("RGBA")
+            img = PILImage.open(io.BytesIO(logo_bytes))
+            # RGBA 보장
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            # 크기 조정 (가로 최대 420px)
             max_w = 420
-            if pil_img.width > max_w:
-                ratio = max_w / float(pil_img.width)
-                pil_img = pil_img.resize((int(pil_img.width * ratio), int(pil_img.height * ratio)))
-            # 임시 파일에 저장
+            if img.width > max_w:
+                ratio = max_w / float(img.width)
+                img = img.resize((int(img.width * ratio), int(img.height * ratio)))
+            # 매우 연하게: 알파를 0.15로 스케일
+            r, g, b, a = img.split()
+            a = a.point(lambda p: int(p * 0.15))
+            img = PILImage.merge("RGBA", (r, g, b, a))
+            # 임시 파일 저장
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                pil_img.save(tmp, format="PNG")
+                img.save(tmp, format="PNG")
                 tmp_logo_path = tmp.name
             xl_img = XLImage(tmp_logo_path)
             ws_sum.add_image(xl_img, "A1")
@@ -359,6 +365,7 @@ def _build_excel():
         ws_sum.cell(row=r, column=2, value=v)
         r += 1
 
+    # 서식
     bold = Font(bold=True)
     ws_sum.cell(row=header_row, column=1).font = bold
     ws_sum.cell(row=header_row, column=2).font = bold
@@ -374,7 +381,6 @@ def _build_excel():
         for row in last_calc["schedule_records"]:
             ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
 
-    # 저장 + 임시파일 정리
     try:
         wb.save(buffer)
     finally:
@@ -388,7 +394,7 @@ def _build_excel():
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 st.download_button(
-    label="엑셀 다운로드 (.xlsx, 로고+요약+사후관리)",
+    label="엑셀 다운로드 (.xlsx, 연한 로고+요약+사후관리)",
     file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     data=excel_bytes,
