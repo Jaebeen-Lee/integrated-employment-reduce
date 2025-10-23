@@ -199,7 +199,7 @@ with st.sidebar:
         st.caption(f"예시 파일 생성 오류: {_e}")
 default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
 
-    st.header("2) 보고서 옵션")
+st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
     logo_file = st.file_uploader("회사 로고 (PNG 권장)", type=["png"], accept_multiple_files=False)
     remember_logo = st.checkbox("이 로고/기관명을 계속 사용(앱 캐시에 저장)", value=True)
