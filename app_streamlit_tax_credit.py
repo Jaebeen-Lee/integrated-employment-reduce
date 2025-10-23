@@ -3,6 +3,7 @@ import streamlit as st
 import json
 import io
 import os
+import tempfile
 import pandas as pd
 from datetime import datetime
 
@@ -17,10 +18,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 시트 복원·로고삽입)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고삽입 안정화)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("결과요약 시트 복원 + 회사 로고(PNG) 상단 삽입 + trigger_calc NameError 방지 + 문법 오류 정정")
+st.caption("엑셀 결과요약 시트 상단 로고 삽입을 임시파일 방식으로 안정화 + 기존 오류 수정")
 
 # =====================
 # 세션 상태 기본 초기화
@@ -143,7 +144,6 @@ with colB:
 
 st.header("고용 인원 입력")
 col1, col2, col3 = st.columns(3)
-
 with col1:
     prev_total = st.number_input("전년 상시근로자 수", min_value=0, value=50, step=1)
     prev_youth = st.number_input("전년 청년등 상시근로자 수", min_value=0, value=10, step=1)
@@ -294,38 +294,39 @@ st.session_state.calc_context = {
 }
 
 # ============================
-# 엑셀 생성 (요약 + 사후관리 결과표) + 상단 로고 삽입
+# 엑셀 생성 (요약 + 사후관리 결과표) + 상단 로고 삽입 (임시파일 방식)
 # ============================
 def _build_excel():
     """엑셀 내보내기: (1) 결과요약 시트(상단 로고 포함), (2) 사후관리 결과표 시트."""
     buffer = io.BytesIO()
     wb = Workbook()
+    tmp_logo_path = None
 
     # ---- 시트1: 결과요약 ----
     ws_sum = wb.active
     ws_sum.title = "결과요약"
 
-    # 로고 삽입 (세션 보관 PNG 사용)
+    # 로고 삽입: 임시파일에 저장 후 openpyxl로 로드
     start_row = 1
     logo_bytes = st.session_state.get("saved_logo_png")
     if logo_bytes:
         try:
             pil_img = PILImage.open(io.BytesIO(logo_bytes))
-            # 모드/크기 정리
             if pil_img.mode not in ("RGB", "RGBA"):
                 pil_img = pil_img.convert("RGBA")
             max_w = 420
             if pil_img.width > max_w:
                 ratio = max_w / float(pil_img.width)
                 pil_img = pil_img.resize((int(pil_img.width * ratio), int(pil_img.height * ratio)))
-            xl_img = XLImage(pil_img)
+            # 임시 파일에 저장
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                pil_img.save(tmp, format="PNG")
+                tmp_logo_path = tmp.name
+            xl_img = XLImage(tmp_logo_path)
             ws_sum.add_image(xl_img, "A1")
-            # 로고 아래 여백 확보
             start_row = 8
-            # 로고 공간 시각적 확보를 위해 1~7행 높이 조정(선택)
             ws_sum.row_dimensions[1].height = 24
         except Exception:
-            # 로고가 깨져도 데이터 작성은 계속
             start_row = 1
 
     # 데이터 작성
@@ -358,7 +359,6 @@ def _build_excel():
         ws_sum.cell(row=r, column=2, value=v)
         r += 1
 
-    # 간단 서식
     bold = Font(bold=True)
     ws_sum.cell(row=header_row, column=1).font = bold
     ws_sum.cell(row=header_row, column=2).font = bold
@@ -374,7 +374,15 @@ def _build_excel():
         for row in last_calc["schedule_records"]:
             ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
 
-    wb.save(buffer)
+    # 저장 + 임시파일 정리
+    try:
+        wb.save(buffer)
+    finally:
+        if tmp_logo_path and os.path.exists(tmp_logo_path):
+            try:
+                os.remove(tmp_logo_path)
+            except Exception:
+                pass
     return buffer.getvalue()
 
 excel_bytes = _build_excel()
