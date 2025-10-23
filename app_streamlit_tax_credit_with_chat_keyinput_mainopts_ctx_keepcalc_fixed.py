@@ -161,39 +161,39 @@ if run:
 
         # 다년 추징표
         st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
-sim_mode = st.radio("시뮬레이션 방식", ["자동 감소(연차별 -1)", "사용자 입력(상시/청년)"], horizontal=True)
-if sim_mode == "자동 감소(연차별 -1)":
-    init_rows = [{"연차": yr, "사후연도 상시": max(0, int(curr_total)-yr), "사후연도 청년등": max(0, int(curr_youth)-max(0, yr))} for yr in range(1, int(retention_years)+1)]
-else:
-    init_rows = [{"연차": yr, "사후연도 상시": int(curr_total), "사후연도 청년등": int(curr_youth)} for yr in range(1, int(retention_years)+1)]
-edited = st.data_editor(pd.DataFrame(init_rows), num_rows="dynamic")
-schedule = []
-for _, row in edited.iterrows():
-    yidx = int(row["연차"])
-    fol_total = int(row["사후연도 상시"])
-    fol_youth = int(row.get("사후연도 청년등", 0))
-    claw = calc_clawback(
-        credit_applied=int(applied),
-        base_headcount_at_credit=int(curr_total),
-        headcount_in_followup_year=fol_total,
-        retention_years_for_company=int(retention_years),
-        year_index_from_credit=yidx,
-        method=clawback_method,
-    )
-    schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
-schedule_df = pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
-# 계산 결과를 세션에 저장하여 rerun(예: 채팅 입력)에도 동일 렌더링
-st.session_state.last_calc = {
-    "gross": int(gross),
-    "applied": int(applied),
-    "retention_years": int(retention_years),
-    "company_size": size.value,
-    "region": region.value,
-    "clawback_method": clawback_method,
-    "base_headcount": int(curr_total),
-    "schedule_records": schedule_df.to_dict(orient="records"),
-}
-st.dataframe(schedule_df, use_container_width=True)
+        sim_mode = st.radio("시뮬레이션 방식", ["자동 감소(연차별 -1)", "사용자 입력(상시/청년)"], horizontal=True)
+        if sim_mode == "자동 감소(연차별 -1)":
+            init_rows = [{"연차": yr, "사후연도 상시": max(0, int(curr_total)-yr), "사후연도 청년등": max(0, int(curr_youth)-max(0, yr))} for yr in range(1, int(retention_years)+1)]
+        else:
+            init_rows = [{"연차": yr, "사후연도 상시": int(curr_total), "사후연도 청년등": int(curr_youth)} for yr in range(1, int(retention_years)+1)]
+        edited = st.data_editor(pd.DataFrame(init_rows), num_rows="dynamic")
+        schedule = []
+        for _, row in edited.iterrows():
+            yidx = int(row["연차"])
+            fol_total = int(row["사후연도 상시"])
+            fol_youth = int(row.get("사후연도 청년등", 0))
+            claw = calc_clawback(
+                credit_applied=int(applied),
+                base_headcount_at_credit=int(curr_total),
+                headcount_in_followup_year=fol_total,
+                retention_years_for_company=int(retention_years),
+                year_index_from_credit=yidx,
+                method=clawback_method,
+            )
+            schedule.append({"연차": yidx, "사후연도 상시": fol_total, "사후연도 청년등": fol_youth, "추징세액": int(claw)})
+        schedule_df = pd.DataFrame(schedule).sort_values("연차").reset_index(drop=True)
+        # 계산 결과를 세션에 저장하여 rerun(예: 채팅 입력)에도 동일 렌더링
+        st.session_state.last_calc = {
+            "gross": int(gross),
+            "applied": int(applied),
+            "retention_years": int(retention_years),
+            "company_size": size.value,
+            "region": region.value,
+            "clawback_method": clawback_method,
+            "base_headcount": int(curr_total),
+            "schedule_records": schedule_df.to_dict(orient="records"),
+        }
+        st.dataframe(schedule_df, use_container_width=True)
         total_clawback = int(schedule_df["추징세액"].sum())
         st.metric("추징세액 합계", f"{total_clawback:,} 원")
 
@@ -340,7 +340,7 @@ else:
         st.subheader("② 사후관리(추징) 시뮬레이션 - 다년표")
         import pandas as _pd
         _schedule_df = _pd.DataFrame(_lc["schedule_records"])
-st.dataframe(_schedule_df, use_container_width=True)
+        st.dataframe(_schedule_df, use_container_width=True)
         total_clawback = int(_schedule_df["추징세액"].sum())
         st.metric("추징세액 합계", f"{total_clawback:,} 원")
     else:
