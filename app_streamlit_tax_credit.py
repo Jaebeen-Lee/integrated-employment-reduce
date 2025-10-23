@@ -584,11 +584,13 @@ if show_chat:
     
     with st.container():
         st.caption("🧪 예시 질문 (클릭하면 바로 질문/답변이 시작됩니다)")
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         if c1.button("❓ 세액 1,000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"):
             st.session_state["pending_user_text"] = "세액 1000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"
         if c2.button("❓ 사후관리 결과를 바탕으로 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"):
             st.session_state["pending_user_text"] = "사후관리 결과를 바탕으로 추징세액보다 공제세액이 크려면 상시근로자를 몇 명 더 고용해야할까요?"
+        if c3.button("❓ 적용공제세액이 계산된 근거를 알려주세요"):
+            st.session_state["pending_user_text"] = "적용공제세액이 계산된 근거를 알려주세요"
     # === [End New] ===
 
     user_text = st.chat_input("메시지를 입력하세요…")
