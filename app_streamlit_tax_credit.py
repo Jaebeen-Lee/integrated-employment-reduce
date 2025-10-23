@@ -1,4 +1,28 @@
 # -*- coding: utf-8 -*-
+
+# === Force scroll to top on load & reruns ===
+import streamlit.components.v1 as _components
+def _inject_force_top(_interval_ms: int = 120, _repeat: int = 15, _enable_mo: bool = True) -> None:
+    _mo_js = "new MutationObserver(() => { forceTop(); }).observe(document.body, {childList: true, subtree: true});" if _enable_mo else ""
+    _html = f"""
+    <script>
+    (function() {{
+      function forceTop() {{
+        try {{ window.scrollTo({{top: 0, behavior: 'auto'}}); }} catch(e) {{}}
+      }}
+      forceTop();
+      let ticks = 0;
+      const iv = setInterval(() => {{
+        forceTop();
+        if (++ticks > {{_repeat}}) clearInterval(iv);
+      }}, {{_interval_ms}});
+      document.addEventListener('visibilitychange', () => {{ if (!document.hidden) forceTop(); }});
+      {_mo_js}
+    }})();
+    </script>
+    """
+    _components.html(_html, height=0)
+# === /Force scroll to top ===
 import streamlit as st
 import json
 import io
@@ -19,7 +43,10 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
+st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)
+# Force scroll to top on load
+_inject_force_top()
+", layout="wide")
 
 # =====================
 # 상단 스크롤 고정 (강제)
