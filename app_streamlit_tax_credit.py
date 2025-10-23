@@ -43,7 +43,7 @@ from employment_tax_credit_calc import (
     apply_caps_and_min_tax, calc_clawback, PolicyParameters
 )
 
-st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 로고영구저장+워터마크+상단스크롤)", layout="wide")
+st.set_page_config(page_title="통합고용증대 세액공제 계산기", layout="wide")
 # Force scroll to top on load
 _inject_force_top()
 
@@ -68,8 +68,8 @@ components.html(
     height=0,
 )
 
-st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("엑셀 결과요약 상단 연한 로고 워터마크 + 실행 시 스크롤 상단 고정 + 회사 로고/기관명 캐시 저장")
+st.title("통합고용증대 세액공제 계산기")
+st.caption("조특법 §29조의8에 따른 통합고용증대 세액공제를 계산합니다.")
 
 # =====================
 # 로컬 캐시 유틸
@@ -163,9 +163,9 @@ def ensure_followup_table(retention_years:int, default_total:int, default_youth:
     st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
 
 with st.sidebar:
-    st.header("1) 정책 파라미터")
-    uploaded = st.file_uploader("시행령 기준 파라미터 JSON 업로드", type=["json"], accept_multiple_files=False)
-    default_info = st.toggle("예시 파라미터 사용 (업로드 없을 때)", value=True)
+    st.header("1) 최근 법령 적용")
+    uploaded = st.file_uploader("최근 법령 JSON 업로드", type=["json"], accept_multiple_files=False)
+    default_info = st.toggle("예시 파라미터 사용", value=True)
 
     st.header("2) 보고서 옵션")
     company_name = st.text_input("회사/기관명 (머리글용)", value=st.session_state.saved_company_name or "(기관명)")
@@ -521,7 +521,7 @@ load_dotenv()
 
 st.divider()
 st.header("💬 OpenAI 챗봇")
-st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요. (모델: gpt-4o-mini)")
+st.caption("계산기 사용과 관련해 궁금한 점을 물어보세요.")
 
 if "openai_api_key" not in st.session_state:
     st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
