@@ -577,26 +577,26 @@ if show_chat:
                 typ = "output_text" if role == "assistant" else "input_text"
                 preview.append({"role": role, "type": typ})
             st.write(preview if preview else "이력 없음")
-# === [New] Example question buttons & pending user text support ===
-if "pending_user_text" not in st.session_state:
-    st.session_state["pending_user_text"] = None
-
-with st.container():
-    st.caption("🧪 예시 질문 (클릭하면 바로 질문/답변이 시작됩니다)")
-    c1, c2 = st.columns(2)
-    if c1.button("❓ 세액 1,000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"):
-        st.session_state["pending_user_text"] = "세액 1000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"
-    if c2.button("❓ 사후관리 결과를 바탕으로 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"):
-        st.session_state["pending_user_text"] = "사후관리 결과를 바탕으로 추징세액보다 공제세액이 크려면 상시근로자를 몇 명 더 고용해야할까요?"
-# === [End New] ===
-
     
+    # === [New] Example question buttons & pending user text support (inside show_chat) ===
+    if "pending_user_text" not in st.session_state:
+        st.session_state["pending_user_text"] = None
+    
+    with st.container():
+        st.caption("🧪 예시 질문 (클릭하면 바로 질문/답변이 시작됩니다)")
+        c1, c2 = st.columns(2)
+        if c1.button("❓ 세액 1,000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"):
+            st.session_state["pending_user_text"] = "세액 1000만원 이상 공제하려면 상시근로자를 몇 명 더 고용해야 할까요?"
+        if c2.button("❓ 사후관리 결과를 바탕으로 공제세액이 추징세액보다 크려면 상시근로자를 몇 명 더 고용해야 할까요?"):
+            st.session_state["pending_user_text"] = "사후관리 결과를 바탕으로 추징세액보다 공제세액이 크려면 상시근로자를 몇 명 더 고용해야할까요?"
+    # === [End New] ===
+
     user_text = st.chat_input("메시지를 입력하세요…")
-# === [New] Consume pending example question if no direct input ===
-if not user_text and st.session_state.get("pending_user_text"):
-    user_text = st.session_state["pending_user_text"]
-    st.session_state["pending_user_text"] = None
-# === [End New] ===
+    # === [New] Consume pending example question if no direct input (inside show_chat) ===
+    if not user_text and st.session_state.get("pending_user_text"):
+        user_text = st.session_state["pending_user_text"]
+        st.session_state["pending_user_text"] = None
+    # === [End New] ===
 
     if user_text:
         st.session_state.chat_history.append({"role": "user", "content": user_text})
