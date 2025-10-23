@@ -1,4 +1,4 @@
-﻿﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 # === Force scroll to top on initial load only ===
 import streamlit.components.v1 as _components
@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage
 
@@ -479,6 +479,48 @@ def _build_excel():
     if last_calc and last_calc.get("schedule_records"):
         for row in last_calc["schedule_records"]:
             ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
+
+    # === [변경 v2] 숫자 있는 첫 3칸 연한 노랑 ===
+    try:
+        # openpyxl은 RGB 6자리 코드 권장
+        yellow_fill = PatternFill(start_color="FCE8A1", end_color="FCE8A1", fill_type="solid")
+
+        # 헤더(1행)에서 대상 열 인덱스 계산 (정수 인덱스 보장)
+        header_map = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
+        col_total = header_map.get("사후연도 상시")
+        col_youth = header_map.get("사후연도 청년등")
+
+        def has_number(v):
+            if v is None:
+                return False
+            # 숫자 or 숫자 문자열 허용
+            try:
+                float(str(v).replace(',', '').strip())
+                return True
+            except Exception:
+                return False
+
+        # 숫자가 들어있는 셀 3개씩만 채움
+        filled_total = 0
+        filled_youth = 0
+        for r in range(2, ws.max_row + 1):
+            if col_total and filled_total < 3:
+                c = ws.cell(row=r, column=col_total)
+                if has_number(c.value):
+                    c.fill = yellow_fill
+                    filled_total += 1
+
+            if col_youth and filled_youth < 3:
+                c = ws.cell(row=r, column=col_youth)
+                if has_number(c.value):
+                    c.fill = yellow_fill
+                    filled_youth += 1
+
+            if filled_total >= 3 and filled_youth >= 3:
+                break
+    except Exception as _style_err:
+        # 색상 적용 실패 시에도 저장은 진행
+        pass
 
     try:
         wb.save(buffer)
