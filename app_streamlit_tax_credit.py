@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 import streamlit as st
 import json
@@ -21,7 +20,7 @@ from employment_tax_credit_calc import (
 st.set_page_config(page_title="통합고용세액공제 계산기 (Pro, 메모리 로고·수정)", layout="wide")
 
 st.title("통합고용세액공제 계산기 · Pro (조특법 §29조의8)")
-st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완. (사후관리 입력/유지 버그 수정)")
+st.caption("로고 메모리 삽입 + 엑셀 서식 적용. NamedStyle 추가 호환성 보완. (사후관리 입력/유지 버그 수정 + 결과요약 시트 복원)")
 
 # =====================
 # 세션 상태 기본 초기화
@@ -36,6 +35,10 @@ _ensure("saved_company_name", None)
 _ensure("followup_table", None)              # 사후관리 표 유지용
 _ensure("calc_summary", None)                # 계산하기 직후 공제요약 유지
 _ensure("last_calc", None)
+
+# ---- rerun 시 NameError 방지용 전역 플래그 초기화 ----
+# Streamlit의 rerun에서 버튼이 눌리지 않으면 해당 변수가 없을 수 있으므로 미리 False로 정의
+trigger_calc = False
 
 # ==== 사후관리 표 유틸을 상단으로 이동 (NameError 방지) ====
 def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
@@ -266,9 +269,7 @@ if summary is not None:
         with c2:
             pass
 
-    trigger_calc = False
     if st.button("🔁 추징세액 계산하기", type="primary"):
-        st.session_state.followup_table = edited.copy()
         st.session_state.followup_table = edited.copy()
         trigger_calc = True
 
@@ -304,11 +305,24 @@ if summary is not None:
             "schedule_records": schedule_df.to_dict(orient="records"),
             "total_clawback": total_clawback,
         }
+
+# ── 재실행(예: 챗봇 입력) 이후에도 최근 결과를 계속 보여주기 ──
+if not trigger_calc:
+    _prev = st.session_state.get("last_calc")
+    if _prev is not None and _prev.get("schedule_records"):
+        import pandas as pd
+        schedule_df = pd.DataFrame(_prev["schedule_records"])
+        st.subheader("사후관리(추징) 결과 (최근 계산)")
+        st.dataframe(schedule_df, use_container_width=True)
+        st.metric("추징세액 합계", f"{int(_prev.get('total_clawback',0)):,} 원")
+
 # ============================
 # 챗봇/컨텍스트
 # ============================
 # 안전 가드: total_clawback 기본값
-safe_total_clawback = st.session_state.last_calc["total_clawback"] if (st.session_state.last_calc and "total_clawback" in st.session_state.last_calc) else 0
+safe_total_clawback = (st.session_state.last_calc["total_clawback"]
+    if (st.session_state.get("last_calc") and "total_clawback" in st.session_state.last_calc)
+    else 0)
 
 # 챗봇 컨텍스트 저장 (공제 결과는 삭제하지 않음)
 st.session_state.calc_context = {
@@ -323,28 +337,67 @@ st.session_state.calc_context = {
 }
 
 # ============================
-# 엑셀 생성 (가능할 때만)
+# 엑셀 생성 (요약 + 사후관리 결과표)
 # ============================
 
 def _build_excel():
-    """엑셀 내보내기: 사후관리 결과표 한 시트만 포함."""
+    """엑셀 내보내기: (1) 결과요약 시트 (복원), (2) 사후관리 결과표 시트."""
     buffer = io.BytesIO()
     wb = Workbook()
-    ws = wb.active
-    ws.title = "사후관리 결과표"
+
+    # ---- 시트1: 결과요약 (복원) ----
+    ws_sum = wb.active
+    ws_sum.title = "결과요약"
+
+    summary = st.session_state.get("calc_summary") or {}
+    inputs = st.session_state.get("current_inputs") or {}
+    last = st.session_state.get("last_calc") or {}
+
+    rows = [
+        ("생성일시", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        ("회사/기관명", st.session_state.get("saved_company_name") or ""),
+        ("기업규모", summary.get("company_size", "")),
+        ("지역", summary.get("region", "")),
+        ("유지기간(년)", summary.get("retention_years", "")),
+        ("총공제액(최저한세/한도 전)", f"{summary.get('gross', 0):,}"),
+        ("적용 공제액(최저한세/한도 후)", f"{summary.get('applied', 0):,}"),
+        ("세전세액(입력)", f"{inputs.get('tax_before_credit', 0):,}"),
+        ("추징 방식", summary.get("clawback_method", inputs.get('clawback_method', ''))),
+        ("추징 합계", f"{last.get('total_clawback', 0):,}"),
+        ("전년 상시/청년등", f"{inputs.get('prev_total', 0)}/{inputs.get('prev_youth', 0)}"),
+        ("당해 상시/청년등", f"{inputs.get('curr_total', 0)}/{inputs.get('curr_youth', 0)}"),
+        ("정규직 전환 / 육아휴직 복귀", f"{inputs.get('converted_regular', 0)} / {inputs.get('returned_parental', 0)}"),
+    ]
+    ws_sum.append(["항목", "값"])
+    for k, v in rows:
+        ws_sum.append([k, v])
+
+    # 간단 서식
+    bold = Font(bold=True)
+    for cell in ws_sum["A"][:1]:
+        cell.font = bold
+    for cell in ws_sum[1]:
+        cell.font = bold
+    ws_sum.column_dimensions["A"].width = 28
+    ws_sum.column_dimensions["B"].width = 30
+
+    # ---- 시트2: 사후관리 결과표 ----
+    ws = wb.create_sheet(title="사후관리 결과표")
     headers = ["연차", "사후연도 상시", "사후연도 청년등", "추징세액"]
     ws.append(headers)
     last_calc = st.session_state.get("last_calc")
     if last_calc and last_calc.get("schedule_records"):
         for row in last_calc["schedule_records"]:
-            ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"]])
+            ws.append([row["연차"], row["사후연도 상시"], row.get("사후연도 청년등", 0), row["추징세액"])
+
     wb.save(buffer)
     return buffer.getvalue()
+
 # 다운로드 버튼 (요약만 있어도 활성화)
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 st.download_button(
-    label="엑셀 다운로드 (.xlsx, Pro 포맷)",
+    label="엑셀 다운로드 (.xlsx, 요약+사후관리)",
     file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     data=excel_bytes,
