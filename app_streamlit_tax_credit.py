@@ -35,7 +35,48 @@ _ensure("saved_logo_png", None)
 _ensure("saved_company_name", None)
 _ensure("followup_table", None)              # 사후관리 표 유지용
 _ensure("calc_summary", None)                # 계산하기 직후 공제요약 유지
-_ensure("last_calc", None)                   # 추징세액 계산하기 결과 유지
+_ensure("last_calc", None)
+
+# ==== 사후관리 표 유틸을 상단으로 이동 (NameError 방지) ====
+def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
+    """
+    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 절대 덮어쓰지 않는다.
+    필요 시 새 연차만 기본값으로 추가하고, 남는 연차는 제거한다.
+    """
+    import pandas as _pd
+
+    # 현재 표
+    cur = st.session_state.get("followup_table")
+    # 목표 인덱스
+    target_years = list(range(1, int(retention_years) + 1))
+
+    if cur is None or cur.empty:
+        st.session_state.followup_table = _pd.DataFrame(
+            [{"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)} for y in target_years]
+        )
+        return
+
+    # 사본으로 작업
+    cur = cur.copy()
+    # dtype 정리
+    for col in ["연차", "사후연도 상시", "사후연도 청년등"]:
+        if col in cur.columns:
+            cur[col] = _pd.to_numeric(cur[col], errors="coerce").fillna(0).astype(int)
+
+    # 현재 연차 -> 값 맵
+    map_exist = {int(r["연차"]): (int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))) for _, r in cur.iterrows()}
+
+    rows = []
+    for y in target_years:
+        if y in map_exist:
+            tot, yth = map_exist[y]
+            rows.append({"연차": y, "사후연도 상시": tot, "사후연도 청년등": yth})
+        else:
+            rows.append({"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)})
+
+    st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
+
+                   # 추징세액 계산하기 결과 유지
 
 with st.sidebar:
     st.header("1) 정책 파라미터")
@@ -436,45 +477,6 @@ importlib.reload(chat_utils)
 from chat_utils import stream_chat
 
 # ==== 보존형 사후표 생성/정렬 유틸 ====
-def ensure_followup_table(retention_years:int, default_total:int, default_youth:int):
-    """
-    사후관리 표를 '연차 1..N'으로 정렬/보충하되, 사용자가 입력한 값은 절대 덮어쓰지 않는다.
-    필요 시 새 연차만 기본값으로 추가하고, 남는 연차는 제거한다.
-    """
-    import pandas as _pd
-
-    # 현재 표
-    cur = st.session_state.get("followup_table")
-    # 목표 인덱스
-    target_years = list(range(1, int(retention_years) + 1))
-
-    if cur is None or cur.empty:
-        st.session_state.followup_table = _pd.DataFrame(
-            [{"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)} for y in target_years]
-        )
-        return
-
-    # 사본으로 작업
-    cur = cur.copy()
-    # dtype 정리
-    for col in ["연차", "사후연도 상시", "사후연도 청년등"]:
-        if col in cur.columns:
-            cur[col] = _pd.to_numeric(cur[col], errors="coerce").fillna(0).astype(int)
-
-    # 현재 연차 -> 값 맵
-    map_exist = {int(r["연차"]): (int(r["사후연도 상시"]), int(r.get("사후연도 청년등", 0))) for _, r in cur.iterrows()}
-
-    rows = []
-    for y in target_years:
-        if y in map_exist:
-            tot, yth = map_exist[y]
-            rows.append({"연차": y, "사후연도 상시": tot, "사후연도 청년등": yth})
-        else:
-            rows.append({"연차": y, "사후연도 상시": int(default_total), "사후연도 청년등": int(default_youth)})
-
-    st.session_state.followup_table = _pd.DataFrame(rows).sort_values("연차").reset_index(drop=True)
-
-
 def _build_chat_context() -> str:
     """현재 입력값과 마지막 계산 결과를 요약해 챗봇에 제공."""
     ci = st.session_state.get("current_inputs")
