@@ -488,7 +488,7 @@ def _build_excel():
 excel_bytes = _build_excel()
 excel_name = f"tax_credit_result_pro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 st.download_button(
-    label="엑셀 다운로드 (.xlsx, 연한 로고+요약+사후관리)",
+    label="엑셀 다운로드 (.xlsx)",
     file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     data=excel_bytes,
